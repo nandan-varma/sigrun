@@ -1,0 +1,37 @@
+[workspace]
+resolver = "2"
+members = [
+    "boot",
+    "kernel",
+    "userspace/init",
+    "userspace/driver-manager",
+    "userspace/filesystem",
+    "userspace/network",
+    "userspace/shell",
+    "userspace/common",
+    "libs/syscall-api",
+    "libs/cap-std",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+authors = ["SIGRUN Team"]
+
+[workspace.dependencies]
+# Common dependencies
+bitflags = "2.6"
+log = "0.4"
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+
+[profile.dev]
+opt-level = 0
+debug = true

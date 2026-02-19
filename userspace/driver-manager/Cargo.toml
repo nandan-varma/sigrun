@@ -1,0 +1,12 @@
+[package]
+name = "driver-manager"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "driver-manager"
+path = "src/main.rs"
+
+[dependencies]
+syscall-api = { path = "../../libs/syscall-api" }
+log = "0.4"

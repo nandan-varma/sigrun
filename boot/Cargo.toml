@@ -1,0 +1,18 @@
+[package]
+name = "boot"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "bootloader"
+path = "src/main.rs"
+
+[dependencies]
+uefi = "0.36"
+log = "0.4"
+
+[profile.release]
+opt-level = "z"
+lto = true

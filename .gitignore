@@ -1,0 +1,30 @@
+# Build artifacts
+/target/
+/build/boot/*.efi
+/build/kernel/*.bin
+/build/userspace/*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+progress.log
+
+# Coverage
+target/coverage/
+
+# Temporary files
+*.tmp
+*.bak
+
+# QEMU
+*.qcow2

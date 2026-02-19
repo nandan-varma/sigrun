@@ -1,81 +1,90 @@
-//! Scheduler subsystem
-//! 
-//! Provides task scheduling, priority management, and CPU allocation.
+//! Scheduler subsystem - simplified stub
 
-use crate::error::KernelError;
+mod runqueue;
+mod task;
 
-/// Initialize the scheduler
-pub fn init() -> Scheduler {
-    Scheduler::new()
+pub use runqueue::{Runqueue, SchedulerState, NUM_PRIORITY_LEVELS};
+pub use task::{
+    BlockReason, CpuAffinity, CpuId, Deadline, Priority, Task, TaskContext, TaskId, TaskState,
+    TaskStats,
+};
+
+pub const DEFAULT_TIME_SLICE_NS: u64 = 10_000_000;
+
+pub struct SchedulerConfig {
+    pub cpu_count: usize,
+    pub load_balancing: bool,
+    pub priority_boost: bool,
+    pub time_slice_ns: u64,
+    pub rt_reserve_percent: u8,
 }
 
-/// Main scheduler structure
+impl Default for SchedulerConfig {
+    fn default() -> Self {
+        Self {
+            cpu_count: 1,
+            load_balancing: true,
+            priority_boost: true,
+            time_slice_ns: DEFAULT_TIME_SLICE_NS,
+            rt_reserve_percent: 20,
+        }
+    }
+}
+
 pub struct Scheduler {
-    cpu_count: usize,
+    config: SchedulerConfig,
 }
 
 impl Scheduler {
-    pub fn new() -> Self {
-        Self {
-            cpu_count: 1, // Would detect actual CPU count
+    pub fn new(config: SchedulerConfig) -> Self {
+        Self { config }
+    }
+
+    pub fn init() -> Self {
+        Self::new(SchedulerConfig::default())
+    }
+
+    pub fn cpu_count(&self) -> usize {
+        self.config.cpu_count
+    }
+
+    pub fn add_task(&mut self, _task: Task) -> TaskId {
+        TaskId::new()
+    }
+
+    pub fn schedule(&mut self, _cpu: usize) -> Option<TaskId> {
+        None
+    }
+
+    pub fn create_init_process(&mut self) -> TaskId {
+        log::info!("    Creating PID 1 (init)");
+        TaskId::new()
+    }
+
+    pub fn start(&self) -> ! {
+        log::info!("    Scheduler running on CPU 0");
+        loop {
+            crate::arch::halt();
         }
     }
-    
-    /// Get number of CPUs
-    pub fn cpu_count(&self) -> usize {
-        self.cpu_count
+
+    pub fn tick(&mut self, _cpu: usize) {}
+    pub fn block(&mut self, _task_id: TaskId, _reason: BlockReason) {}
+    pub fn wake(&mut self, _task_id: TaskId) {}
+    pub fn sleep_until(&mut self, _task_id: TaskId, _deadline: Deadline) {}
+    pub fn current_task(&self, _cpu: usize) -> Option<TaskId> {
+        None
     }
-}
-
-/// Task ID
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct TaskId(u64);
-
-impl TaskId {
-    pub fn new() -> Self {
-        use core::sync::atomic::{AtomicU64, Ordering};
-        static NEXT: AtomicU64 = AtomicU64::new(1);
-        Self(NEXT.fetch_add(1, Ordering::Relaxed))
+    pub fn has_task(&self, _task_id: TaskId) -> bool {
+        false
     }
-    
-    pub fn as_u64(self) -> u64 { self.0 }
-}
-
-/// Task priority (0 = highest, 255 = lowest)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Priority(u8);
-
-impl Priority {
-    pub const MAX: Priority = Priority(0);
-    pub const MIN: Priority = Priority(255);
-    pub const DEFAULT: Priority = Priority(128);
-    
-    pub fn new(p: u8) -> Self { Self(p) }
-    pub fn as_u8(self) -> u8 { self.0 }
-}
-
-/// Task state
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TaskState {
-    Ready,
-    Running,
-    Blocked,
-    Sleeping,
-    Terminated,
-}
-
-/// Create initial userspace process
-pub fn create_init_process() -> TaskId {
-    // Simplified: Would create actual process with capabilities
-    log::info!("    Creating PID 1 (init)");
-    TaskId::new()
-}
-
-/// Start the scheduler (enters idle loop)
-pub fn start() -> ! {
-    log::info!("    Scheduler running on CPU 0");
-    loop {
-        // Idle loop - in real implementation, halt CPU
-        crate::arch::halt();
+    pub fn get_task(&self, _task_id: TaskId) -> Option<&Task> {
+        None
+    }
+    pub fn task_count(&self) -> usize {
+        0
+    }
+    pub fn set_priority(&mut self, _task_id: TaskId, _priority: Priority) -> bool {
+        false
     }
 }

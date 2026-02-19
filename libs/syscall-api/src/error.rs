@@ -9,12 +9,12 @@ impl SyscallError {
     pub const fn from_raw(code: i64) -> Self {
         Self(code)
     }
-    
+
     /// Get raw error code
     pub fn raw(self) -> i64 {
         self.0
     }
-    
+
     /// Get error code as positive number
     pub fn code(self) -> u64 {
         (-self.0) as u64

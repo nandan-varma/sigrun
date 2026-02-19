@@ -4,6 +4,8 @@
 
 #![no_std]
 
+extern crate alloc;
+
 pub mod arch;
 pub mod capability;
 pub mod error;

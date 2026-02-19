@@ -1,5 +1,5 @@
 //! Capability standard library
-//! 
+//!
 //! This will provide the standard capability manipulation interfaces for SIGRUN.
 
 #![no_std]

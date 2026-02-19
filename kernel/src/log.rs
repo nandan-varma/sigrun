@@ -1,7 +1,5 @@
 //! Kernel logging subsystem
 
-use core::fmt::Write;
-
 /// Initialize early logging (before memory manager)
 pub fn early_init() {
     // Would set up early console output
@@ -17,7 +15,7 @@ macro_rules! log {
 }
 
 /// Log at INFO level
-pub fn info(msg: &str) {
+pub fn info(_msg: &str) {
     #[cfg(feature = "debug")]
     {
         // Would output to serial/console
@@ -26,7 +24,7 @@ pub fn info(msg: &str) {
 }
 
 /// Log at ERROR level
-pub fn error(msg: &str) {
+pub fn error(_msg: &str) {
     // Would output to serial/console
 }
 

@@ -1,55 +1,270 @@
 //! Inter-Process Communication subsystem
-//! 
+//!
 //! Provides message passing, shared memory, and async notifications.
+//! This is the main entry point for the IPC system.
 
-use crate::error::KernelError;
+pub mod channel;
+pub mod endpoint;
+pub mod message;
+pub mod notification;
+pub mod queue;
+pub mod shared_memory;
+pub mod syscall;
 
-/// Initialize IPC subsystem
-pub fn init() {
-    log::info!("  - IPC channels initialized");
-}
+use core::fmt;
 
-/// IPC message type
-#[derive(Debug, Clone, Copy)]
-pub enum MessageType {
-    Call,   // Request-response
-    Send,   // Fire-and-forget
-    Recv,   // Blocking receive
-    Signal, // Async notification
-}
-
-/// IPC endpoint
-#[derive(Debug, Clone, Copy)]
-pub struct Endpoint {
-    pub process: u64,
-    pub slot: u32,
-}
-
-/// Create IPC channel
-pub fn create_channel() -> Result<(Endpoint, Endpoint), IpcError> {
-    // Simplified: Would create actual IPC channel
-    Ok((
-        Endpoint { process: 1, slot: 0 },
-        Endpoint { process: 1, slot: 1 },
-    ))
-}
+pub use channel::{Channel, ChannelError, ChannelFlags, ChannelId, ChannelManager};
+pub use endpoint::{CapabilitySlot, Endpoint, EndpointId, EndpointInfo, EndpointRights, ProcessId};
+pub use message::{
+    Deadline, Message, MessageFlags, MessageHeader, MessageId, MessageType, MAX_INLINE_CAPS,
+    MAX_INLINE_PAYLOAD,
+};
+pub use notification::{
+    Notification, NotificationBits, NotificationId, NotificationManager, WaitError, WaitSet,
+};
+pub use queue::{MessageQueue, QueueError, QueueStats, DEFAULT_QUEUE_SIZE};
+pub use shared_memory::{
+    MemoryRights, ShareMode, SharedMemoryManager, SharedMemoryRegion, ShmError, ShmHandle, ShmId,
+    ShmMapping,
+};
+pub use syscall::{
+    dispatch_ipc_syscall, get_manager, handle_ipc_call, handle_ipc_create, handle_ipc_destroy,
+    handle_ipc_recv, handle_ipc_send, init as init_manager, sys_ipc_call, sys_ipc_create,
+    sys_ipc_destroy, sys_ipc_notify, sys_ipc_recv, sys_ipc_send, sys_ipc_wait, IpcManager,
+};
 
 /// IPC errors
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IpcError {
     InvalidEndpoint,
     ChannelClosed,
     QueueFull,
+    QueueEmpty,
     Timeout,
+    PermissionDenied,
+    ProcessNotFound,
+    CreationFailed,
+    OutOfMemory,
 }
 
-impl core::fmt::Display for IpcError {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+impl fmt::Display for IpcError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidEndpoint => write!(f, "Invalid endpoint"),
             Self::ChannelClosed => write!(f, "Channel closed"),
             Self::QueueFull => write!(f, "Queue full"),
+            Self::QueueEmpty => write!(f, "Queue empty"),
             Self::Timeout => write!(f, "Timeout"),
+            Self::PermissionDenied => write!(f, "Permission denied"),
+            Self::ProcessNotFound => write!(f, "Process not found"),
+            Self::CreationFailed => write!(f, "Channel creation failed"),
+            Self::OutOfMemory => write!(f, "Out of memory"),
         }
+    }
+}
+
+/// Initialize IPC subsystem
+pub fn init() {
+    log::info!("  - IPC subsystem initializing...");
+
+    syscall::init();
+
+    log::info!("  - Message types registered");
+    log::info!("  - Channel manager initialized");
+    log::info!("  - Notification system ready");
+    log::info!("  - Shared memory manager ready");
+    log::info!("  - IPC syscall handlers registered");
+}
+
+/// Create a new IPC channel between two processes
+///
+/// Returns the channel ID on success
+pub fn create_channel(process_a: u64, process_b: u64) -> Result<u64, IpcError> {
+    let manager = get_manager();
+    let channel_id = manager
+        .channels
+        .create_channel(
+            ProcessId::from_raw(process_a),
+            ProcessId::from_raw(process_b),
+        )
+        .map_err(|e| e)?;
+    Ok(channel_id.as_u64())
+}
+
+/// Destroy an IPC channel
+pub fn destroy_channel(channel_id: u64) -> Result<(), IpcError> {
+    let manager = get_manager();
+    manager
+        .channels
+        .destroy_channel(ChannelId(channel_id))
+        .map_err(|e| e)?;
+    Ok(())
+}
+
+/// Send a message through a channel
+pub fn send_message(channel_id: u64, endpoint_id: u64, msg: Message) -> Result<(), IpcError> {
+    let manager = get_manager();
+    let channel = manager
+        .channels
+        .get_channel(ChannelId(channel_id))
+        .ok_or(IpcError::InvalidEndpoint)?;
+
+    channel
+        .lock()
+        .send(EndpointId(endpoint_id), msg)
+        .map_err(|_| IpcError::ChannelClosed)
+}
+
+/// Receive a message from a channel
+pub fn recv_message(channel_id: u64, endpoint_id: u64) -> Result<Message, IpcError> {
+    let manager = get_manager();
+    let channel = manager
+        .channels
+        .get_channel(ChannelId(channel_id))
+        .ok_or(IpcError::InvalidEndpoint)?;
+
+    channel
+        .lock()
+        .recv(EndpointId(endpoint_id))
+        .map_err(|_| IpcError::ChannelClosed)
+}
+
+/// Perform an RPC-style call through a channel
+pub fn call(channel_id: u64, endpoint_id: u64, request: Message) -> Result<Message, IpcError> {
+    let manager = get_manager();
+    let channel = manager
+        .channels
+        .get_channel(ChannelId(channel_id))
+        .ok_or(IpcError::InvalidEndpoint)?;
+
+    channel
+        .lock()
+        .call(EndpointId(endpoint_id), request)
+        .map_err(|_| IpcError::Timeout)
+}
+
+/// Create a notification object for async events
+pub fn create_notification(process_id: u64) -> u64 {
+    let manager = get_manager();
+    let notification = manager
+        .notifications
+        .create_notification(ProcessId::from_raw(process_id));
+    notification.id.as_u64()
+}
+
+/// Signal a notification with specific bits
+pub fn signal_notification(notification_id: u64, bits: u64) -> Result<(), IpcError> {
+    let manager = get_manager();
+    manager
+        .notifications
+        .signal(NotificationId(notification_id), bits)
+        .map_err(|_| IpcError::InvalidEndpoint)
+}
+
+/// Wait for notification events
+pub fn wait_notification(notification_id: u64, mask: u64) -> u64 {
+    let manager = get_manager();
+    if let Some(notification) = manager
+        .notifications
+        .get_notification(NotificationId(notification_id))
+    {
+        notification.wait(mask)
+    } else {
+        0
+    }
+}
+
+/// Create a shared memory region
+pub fn create_shared_memory(owner_id: u64, page_count: usize) -> Result<u64, IpcError> {
+    let manager = get_manager();
+    let region = manager
+        .shared_memory
+        .create_region(
+            page_count,
+            MemoryRights::READ | MemoryRights::WRITE,
+            ShareMode::ReadWrite,
+            ProcessId::from_raw(owner_id),
+        )
+        .map_err(|_| IpcError::OutOfMemory)?;
+    Ok(region.id.as_u64())
+}
+
+/// Destroy a shared memory region
+pub fn destroy_shared_memory(region_id: u64) -> Result<(), IpcError> {
+    let manager = get_manager();
+    manager
+        .shared_memory
+        .destroy_region(ShmId(region_id))
+        .map_err(|_| IpcError::InvalidEndpoint)
+}
+
+/// Get IPC statistics
+pub fn get_stats() -> IpcStats {
+    let manager = get_manager();
+    IpcStats {
+        channels: manager.channels.channel_count(),
+        notifications: manager.notifications.notification_count(),
+        shared_memory_regions: manager.shared_memory.region_count(),
+    }
+}
+
+/// IPC system statistics
+#[derive(Debug, Clone, Copy)]
+pub struct IpcStats {
+    pub channels: usize,
+    pub notifications: usize,
+    pub shared_memory_regions: usize,
+}
+
+impl fmt::Display for IpcStats {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "IPC Stats: {} channels, {} notifications, {} shared memory regions",
+            self.channels, self.notifications, self.shared_memory_regions
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn init_test() {
+        if syscall::IPC_MANAGER.get().is_none() {
+            init();
+        }
+    }
+
+    #[test]
+    fn test_ipc_init() {
+        init_test();
+        let stats = get_stats();
+        assert_eq!(stats.channels, 0);
+    }
+
+    #[test]
+    fn test_channel_lifecycle() {
+        init_test();
+        let pid1 = 1u64;
+        let pid2 = 2u64;
+
+        let channel_id = create_channel(pid1, pid2).unwrap();
+        assert!(channel_id > 0);
+        assert_eq!(get_stats().channels, 1);
+
+        destroy_channel(channel_id).unwrap();
+        assert_eq!(get_stats().channels, 0);
+    }
+
+    #[test]
+    fn test_notification_lifecycle() {
+        init_test();
+        let pid = 1u64;
+
+        let notif_id = create_notification(pid);
+        assert!(notif_id > 0);
+
+        signal_notification(notif_id, NotificationBits::BIT_0.bits()).unwrap();
     }
 }

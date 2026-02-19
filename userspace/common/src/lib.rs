@@ -1,11 +1,12 @@
 //! Common userspace types and utilities
 
 #![no_std]
+#![forbid(unsafe_op_in_unsafe_fn)]
 
+pub mod buffer;
 pub mod error;
+pub mod handle;
+pub mod ipc;
 
-pub mod ipc {
-    use crate::error::Error;
-    
-    pub type Result<T> = core::result::Result<T, Error>;
-}
+pub use error::Error;
+pub use handle::*;

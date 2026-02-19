@@ -1,67 +1,177 @@
 //! Boot-time Paging Setup
+//!
+//! This module handles setting up initial page tables for transitioning
+//! from UEFI (identity-mapped) to the kernel's expected virtual memory layout.
 
-/// Set up identity-paged page tables for early boot
-/// 
-/// This creates a simple 1:1 mapping of physical to virtual memory
-/// for the kernel to access physical memory during early boot.
-/// Later, the kernel will set up proper virtual memory.
-pub fn setup_identity_paging() {
-    // In a full implementation:
-    // 1. Allocate PML4, PDPT, PD, PT tables
-    // 2. Create identity mappings for early memory
-    // 3. Enable PAE and paging
-    // 4. Load PML4 into CR3
-    
-    // This is a placeholder - real implementation would:
-    // - Allocate page tables in early memory
-    // - Set up 4-level paging structure
-    // - Enable long mode on x86_64
-    // - Enable paging via CR0/CR4
+use crate::memory::MemoryInfo;
+use uefi::boot::MemoryType;
+
+/// 4KB page size
+const PAGE_SIZE: u64 = 4096;
+
+/// Size of page table entries
+const PAGE_TABLE_ENTRY_SIZE: usize = 512;
+
+/// Kernel virtual base address (standard x86_64 mapping)
+const KERNEL_VIRT_BASE: u64 = 0xFFFF800000000000;
+
+/// Paging setup errors
+#[derive(Debug)]
+pub enum PagingError {
+    AllocationFailed,
+    MappingFailed,
 }
 
-/// Page table entry flags
-#[derive(Clone, Copy)]
-pub struct PageTableFlags {
-    pub present: bool,
-    pub writable: bool,
-    pub user_accessible: bool,
-    pub write_through: bool,
-    pub cache_disable: bool,
-    pub accessed: bool,
-    pub dirty: bool,
-    pub page_size: bool,  // 1 = 2MB/1GB page, 0 = 4KB
-    pub global: bool,
-    pub no_execute: bool,
-}
+/// Set up identity-mapped page tables for early boot
+///
+/// Creates 4-level paging structure with:
+/// 1. Identity mapping for all usable memory (for early boot)
+/// 2. Higher-half mapping for kernel (if needed)
+pub fn setup_identity_paging(mem_info: &MemoryInfo) -> Result<(), PagingError> {
+    let pml4_phys = allocate_page_table()?;
+    let pdpt_phys = allocate_page_table()?;
+    let pd_phys = allocate_page_table()?;
 
-impl PageTableFlags {
-    pub fn kernel() -> Self {
-        Self {
-            present: true,
-            writable: true,
-            user_accessible: false,
-            write_through: false,
-            cache_disable: false,
-            accessed: true,
-            dirty: true,
-            page_size: false,
-            global: false,
-            no_execute: false,
+    // Initialize tables to zero
+    unsafe {
+        core::ptr::write_bytes(pml4_phys as *mut u8, 0, PAGE_SIZE as usize);
+        core::ptr::write_bytes(pdpt_phys as *mut u8, 0, PAGE_SIZE as usize);
+        core::ptr::write_bytes(pd_phys as *mut u8, 0, PAGE_SIZE as usize);
+    }
+
+    // Set up PML4 entries
+    let pml4 = pml4_phys as *mut u64;
+    let pdpt = pdpt_phys as *mut u64;
+
+    unsafe {
+        // Entry 0: Identity mapping (low memory)
+        *pml4.add(0) = pdpt_phys | PageTableFlags::present_bits();
+
+        // Entry 511: Higher half (kernel space)
+        *pml4.add(511) = pdpt_phys | PageTableFlags::present_bits();
+    }
+
+    // Set up PDPT entries for identity mapping
+    // Map first 512GB of physical memory using 1GB pages
+    for i in 0..512 {
+        let phys_addr = i as u64 * 1024 * 1024 * 1024; // 1GB pages
+        unsafe {
+            *pdpt.add(i) = phys_addr | PageTableFlags::huge_page_bits();
         }
     }
-    
-    pub fn to_bits(&self) -> u64 {
-        let mut bits = 0u64;
-        if self.present { bits; }
-        if |= 1 self.writable { bits |= 2; }
-        if self.user_accessible { bits |= 4; }
-        if self.write_through { bits |= 8; }
-        if self.cache_disable { bits |= 0x10; }
-        if self.accessed { bits |= 0x20; }
-        if self.dirty { bits |= 0x40; }
-        if self.page_size { bits |= 0x80; }
-        if self.global { bits |= 0x100; }
-        if self.no_execute { bits |= 0x8000000000000000; }
-        bits
+
+    // Load PML4 into CR3
+    unsafe {
+        load_page_table(pml4_phys);
+        enable_paging();
+    }
+
+    Ok(())
+}
+
+/// Allocate a page-aligned page table
+fn allocate_page_table() -> Result<u64, PagingError> {
+    let addr = uefi::boot::allocate_pages(
+        uefi::boot::AllocateType::AnyPages,
+        MemoryType::LOADER_DATA,
+        1,
+    )
+    .map_err(|_| PagingError::AllocationFailed)?;
+
+    Ok(addr.as_ptr() as u64)
+}
+
+/// Load a page table address into CR3
+unsafe fn load_page_table(pml4_phys: u64) {
+    unsafe {
+        core::arch::asm!(
+            "mov cr3, {}",
+            in(reg) pml4_phys,
+            options(nostack, preserves_flags)
+        );
+    }
+}
+
+/// Enable paging and long mode
+unsafe fn enable_paging() {
+    unsafe {
+        // Enable PAE (Physical Address Extension)
+        core::arch::asm!(
+            "mov rax, cr4",
+            "or rax, 0x20", // Set PAE bit
+            "mov cr4, rax",
+            options(nostack, preserves_flags)
+        );
+
+        // Set LM-bit in EFER MSR
+        core::arch::asm!(
+            "mov ecx, 0xC0000080",
+            "rdmsr",
+            "or eax, 0x100", // Set LME bit
+            "wrmsr",
+            options(nostack, preserves_flags)
+        );
+
+        // Enable paging in CR0
+        core::arch::asm!(
+            "mov rax, cr0",
+            "or rax, 0x80000000", // Set PG bit
+            "mov cr0, rax",
+            options(nostack, preserves_flags)
+        );
+    }
+}
+
+/// Page table entry flags helper
+pub struct PageTableFlags;
+
+impl PageTableFlags {
+    /// Flags for a present, writable, kernel page table entry
+    pub fn present_bits() -> u64 {
+        0x3 // Present + Writable
+    }
+
+    /// Flags for a 1GB huge page
+    pub fn huge_page_bits() -> u64 {
+        0x183 // Present + Writable + Huge (1GB)
+    }
+
+    /// Check if a flag indicates a present entry
+    pub fn is_present(entry: u64) -> bool {
+        (entry & 0x1) != 0
+    }
+
+    /// Check if a flag indicates a huge page
+    pub fn is_huge_page(entry: u64) -> bool {
+        (entry & 0x80) != 0
+    }
+}
+
+/// Create a page table entry from physical address and flags
+pub fn make_entry(phys_addr: u64, flags: u64) -> u64 {
+    (phys_addr & !0xFFF) | (flags & 0xFFF)
+}
+
+/// Get physical address from page table entry
+pub fn get_phys_addr(entry: u64) -> u64 {
+    entry & !0xFFF
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_page_table_flags() {
+        assert!(PageTableFlags::is_present(0x3));
+        assert!(!PageTableFlags::is_present(0));
+        assert!(PageTableFlags::is_huge_page(0x83));
+    }
+
+    #[test]
+    fn test_make_entry() {
+        let entry = make_entry(0x1000, 0x3);
+        assert_eq!(entry, 0x1003);
+        assert_eq!(get_phys_addr(entry), 0x1000);
     }
 }

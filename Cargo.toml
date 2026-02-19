@@ -24,6 +24,7 @@ authors = ["SIGRUN Team"]
 bitflags = "2.6"
 log = "0.4"
 serde = { version = "1.0", features = ["derive"] }
+spin = "0.9"
 toml = "0.8"
 
 [profile.release]
@@ -31,7 +32,9 @@ opt-level = "z"
 lto = true
 codegen-units = 1
 strip = true
+panic = "abort"
 
 [profile.dev]
 opt-level = 0
 debug = true
+panic = "abort"

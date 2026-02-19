@@ -8,63 +8,113 @@
 //! 4. Managing service lifecycle
 
 #![no_std]
-#![forbid(unsafe_op_in_unsafe_fn)]
+#![no_main]
 
-extern crate syscall_api;
+use core::panic::PanicInfo;
+use syscall_api::{SYSCALL_WRITE, SyscallArgs};
 
-use core::fmt::Write;
+const MAX_SERVICES: usize = 8;
+const MAX_NAME_LEN: usize = 32;
+const MAX_CAPS: usize = 4;
 
 /// Main entry point for init service
-pub fn main() -> ! {
-    println!("SIGRUN Init Service v0.1");
-    println!("========================\n");
-    
-    // Get initial capabilities from kernel
+#[unsafe(no_mangle)]
+pub extern "C" fn _start() -> ! {
+    main()
+}
+
+fn main() -> ! {
+    print("SIGRUN Init Service v0.1\n");
+    print("========================\n\n");
+
     let caps = get_initial_capabilities();
-    println!("Received {} initial capabilities", caps.len());
-    
-    // Create service manager
+    print("Received initial capabilities\n");
+
     let mut manager = ServiceManager::new(caps);
-    
-    // Load and parse service manifest
-    println!("Loading service manifest...");
-    match manager.load_manifest("/etc/services.toml") {
+
+    print("Loading service manifest...\n");
+    match manager.load_manifest() {
         Ok(manifest) => {
-            println!("Manifest loaded: {} services defined", manifest.services.len());
-            
-            // Start services
-            println!("Starting services...\n");
-            if let Err(e) = manager.start_services(&manifest) {
-                println!("ERROR: Failed to start services: {:?}", e);
+            print("Manifest loaded: ");
+            print_u64(manifest.service_count as u64);
+            print(" services\n");
+
+            print("Starting services...\n\n");
+            if let Err(_) = manager.start_services(&manifest) {
+                print("ERROR: Failed to start services\n");
             }
         }
-        Err(e) => {
-            println!("WARNING: Could not load manifest: {:?}, starting minimal system", e);
+        Err(_) => {
+            print("WARNING: Could not load manifest, starting minimal system\n");
         }
     }
-    
-    // Enter service loop
-    println!("\nInit complete. Entering service loop...");
+
+    print("\nInit complete. Entering service loop...\n");
     service_loop();
 }
 
+/// Print a string using syscall
+fn print(s: &str) {
+    let args = SyscallArgs::new(SYSCALL_WRITE).with_3args(1, s.as_ptr() as u64, s.len() as u64);
+    unsafe {
+        let _ = syscall_api::syscall(args);
+    }
+}
+
+/// Print a u64
+fn print_u64(n: u64) {
+    if n == 0 {
+        print("0");
+        return;
+    }
+
+    let mut buf = [0u8; 20];
+    let mut i = 20;
+    let mut n = n;
+
+    while n > 0 {
+        i -= 1;
+        buf[i] = b'0' + (n % 10) as u8;
+        n /= 10;
+    }
+
+    print(core::str::from_utf8(&buf[i..]).unwrap_or("?"));
+}
+
 /// Get initial capabilities from kernel
-/// 
-/// These are passed to the init process at creation time
-fn get_initial_capabilities() -> Vec<Capability> {
-    // In real implementation, these would be passed via IPC
-    // For now, return empty - real impl would receive from kernel
-    Vec::new()
+fn get_initial_capabilities() -> CapabilitySet {
+    CapabilitySet::new()
+}
+
+/// Fixed-size capability set
+struct CapabilitySet {
+    caps: [Capability; MAX_CAPS],
+    count: usize,
+}
+
+impl CapabilitySet {
+    const fn new() -> Self {
+        Self {
+            caps: [Capability { id: 0, rights: 0 }; MAX_CAPS],
+            count: 0,
+        }
+    }
+
+    fn len(&self) -> usize {
+        self.count
+    }
 }
 
 /// Service Manager
 struct ServiceManager {
-    capabilities: Vec<Capability>,
-    services: Vec<Service>,
+    capabilities: CapabilitySet,
+    services: [Service; MAX_SERVICES],
+    service_count: usize,
 }
 
+#[derive(Clone, Copy)]
 struct Service {
-    name: String,
+    name: [u8; MAX_NAME_LEN],
     pid: u64,
     state: ServiceState,
 }
@@ -78,43 +128,59 @@ enum ServiceState {
 }
 
 impl ServiceManager {
-    fn new(caps: Vec<Capability>) -> Self {
+    const fn new(caps: CapabilitySet) -> Self {
         Self {
             capabilities: caps,
-            services: Vec::new(),
+            services: [Service {
+                name: [0; MAX_NAME_LEN],
+                pid: 0,
+                state: ServiceState::Stopped,
+            }; MAX_SERVICES],
+            service_count: 0,
         }
     }
-    
+
     /// Load service manifest from file
-    fn load_manifest(&mut self, path: &str) -> Result<ServiceManifest, ManifestError> {
-        // Simplified: Would actually parse TOML file
-        // For now, return minimal manifest
-        Ok(ServiceManifest {
-            services: vec![
-                ServiceDef {
-                    name: "driver-manager".to_string(),
-                    program: "/sbin/driver-manager".to_string(),
-                    capabilities: vec!["pci".to_string()],
-                },
-                ServiceDef {
-                    name: "filesystem".to_string(),
-                    program: "/sbin/filesystem".to_string(),
-                    capabilities: vec!["virtio-blk".to_string()],
-                },
-            ],
-        })
+    fn load_manifest(&mut self) -> Result<ServiceManifest, ManifestError> {
+        let mut manifest = ServiceManifest::new();
+
+        // Add driver-manager service
+        let name = b"driver-manager";
+        let prog = b"/sbin/driver-manager";
+
+        let mut def = ServiceDef {
+            name: [0; MAX_NAME_LEN],
+            program: [0; MAX_NAME_LEN],
+            capabilities: [Capability { id: 0, rights: 0 }; MAX_CAPS],
+        };
+
+        def.name[..name.len()].copy_from_slice(name);
+        def.program[..prog.len()].copy_from_slice(prog);
+        def.capabilities[0] = Capability { id: 1, rights: 0b1 };
+
+        manifest.add(def)?;
+        Ok(manifest)
     }
-    
+
     /// Start all services in manifest
     fn start_services(&mut self, manifest: &ServiceManifest) -> Result<(), StartError> {
-        for def in &manifest.services {
-            println!("Starting: {}...", def.name);
-            // Would spawn actual process here
-            self.services.push(Service {
-                name: def.name.clone(),
-                pid: 0, // Would be real PID
-                state: ServiceState::Running,
-            });
+        for i in 0..manifest.service_count {
+            let def = &manifest.services[i];
+            let name = core::str::from_utf8(&def.name)
+                .unwrap_or("unknown")
+                .trim_end_matches('\0');
+            print("Starting: ");
+            print(name);
+            print("...\n");
+
+            if self.service_count < MAX_SERVICES {
+                self.services[self.service_count] = Service {
+                    name: def.name,
+                    pid: 0,
+                    state: ServiceState::Running,
+                };
+                self.service_count += 1;
+            }
         }
         Ok(())
     }
@@ -122,18 +188,42 @@ impl ServiceManager {
 
 /// Service manifest
 struct ServiceManifest {
-    services: Vec<ServiceDef>,
+    services: [ServiceDef; MAX_SERVICES],
+    service_count: usize,
+}
+
+impl ServiceManifest {
+    const fn new() -> Self {
+        Self {
+            services: [ServiceDef {
+                name: [0; MAX_NAME_LEN],
+                program: [0; MAX_NAME_LEN],
+                capabilities: [Capability { id: 0, rights: 0 }; MAX_CAPS],
+            }; MAX_SERVICES],
+            service_count: 0,
+        }
+    }
+
+    fn add(&mut self, def: ServiceDef) -> Result<(), ManifestError> {
+        if self.service_count >= MAX_SERVICES {
+            return Err(ManifestError::TooManyServices);
+        }
+        self.services[self.service_count] = def;
+        self.service_count += 1;
+        Ok(())
+    }
 }
 
 /// Service definition from manifest
+#[derive(Clone, Copy)]
 struct ServiceDef {
-    name: String,
-    program: String,
-    capabilities: Vec<String>,
+    name: [u8; MAX_NAME_LEN],
+    program: [u8; MAX_NAME_LEN],
+    capabilities: [Capability; MAX_CAPS],
 }
 
 /// Capability placeholder
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 struct Capability {
     id: u64,
     rights: u32,
@@ -144,6 +234,7 @@ struct Capability {
 enum ManifestError {
     NotFound,
     ParseError,
+    TooManyServices,
 }
 
 /// Service start errors
@@ -156,26 +247,16 @@ enum StartError {
 /// Main service loop
 fn service_loop() -> ! {
     loop {
-        // Handle IPC messages from child services
-        // Would block on IPC receive here
-        // For now, just yield
-        unsafe { asm!("wfi", options(nomem, nostack)); }
+        unsafe {
+            core::arch::asm!("wfi", options(nomem, nostack));
+        }
     }
 }
 
-/// Simple println macro for no_std
-#[macro_export]
-macro_rules! println {
-    () => { ($crate::print!("\n")) };
-    ($($arg:tt)*) => { ($crate::print!("{}\n", format!($($arg)*))) };
-}
-
-#[macro_export]
-macro_rules! print {
-    ($($arg:tt)*) => {
-        {
-            // Would use syscall to write to console
-            let _ = write!(core::fmt::Formatter, "{}", format!($($arg)*));
-        }
-    };
+/// Panic handler
+#[cfg(not(test))]
+#[panic_handler]
+fn panic(_info: &PanicInfo) -> ! {
+    print("PANIC in init\n");
+    loop {}
 }

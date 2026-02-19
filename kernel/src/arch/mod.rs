@@ -2,7 +2,7 @@
 
 pub mod x86_64;
 
-use crate::error::KernelError;
+pub use x86_64::{ApicId, PhysAddr, VirtAddr, PAGE_SIZE};
 
 /// Boot parameters from bootloader
 #[repr(C)]
@@ -22,9 +22,7 @@ pub struct BootParams {
 impl BootParams {
     pub fn validate(&self) -> bool {
         const SIGRUN_MAGIC: u64 = 0x53494752;
-        self.magic == SIGRUN_MAGIC 
-            && self.version == 1
-            && self.kernel_size > 0
+        self.magic == SIGRUN_MAGIC && self.version == 1 && self.kernel_size > 0
     }
 }
 
@@ -32,11 +30,17 @@ impl BootParams {
 pub fn halt() -> ! {
     #[cfg(target_arch = "x86_64")]
     {
-        unsafe { asm!("hlt", options(nomem, nostack)); }
+        use core::arch::asm;
+        unsafe {
+            asm!("hlt", options(nomem, nostack));
+        }
     }
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(not(target_arch = "x86_64"))]
     {
-        unsafe { asm!("wfi", options(nomem, nostack)); }
+        use core::arch::asm;
+        unsafe {
+            asm!("wfi", options(nomem, nostack));
+        }
     }
     loop {}
 }
@@ -44,24 +48,40 @@ pub fn halt() -> ! {
 /// Enable interrupts
 pub fn enable_interrupts() {
     #[cfg(target_arch = "x86_64")]
-    unsafe { asm!("sti", options(nomem, nostack)); }
+    {
+        use core::arch::asm;
+        unsafe {
+            asm!("sti", options(nomem, nostack));
+        }
+    }
 }
 
 /// Disable interrupts
 pub fn disable_interrupts() {
     #[cfg(target_arch = "x86_64")]
-    unsafe { asm!("cli", options(nomem, nostack)); }
+    {
+        use core::arch::asm;
+        unsafe {
+            asm!("cli", options(nomem, nostack));
+        }
+    }
 }
 
 /// Read the current flags register
 pub fn read_flags() -> u64 {
     #[cfg(target_arch = "x86_64")]
     {
+        use core::arch::asm;
         let flags: u64;
-        unsafe { asm!("pushfq; pop {}", out(reg) flags, options(nomem)); }
+        unsafe {
+            asm!("pushfq; pop {}", out(reg) flags, options(nomem));
+        }
         flags
     }
-    0
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        0
+    }
 }
 
 /// CPU ID type
@@ -72,11 +92,14 @@ pub struct CpuId(pub u32);
 pub fn get_cpu_id() -> CpuId {
     #[cfg(target_arch = "x86_64")]
     {
+        use core::arch::asm;
         let id: u32;
-        unsafe { asm!("cpuid", out("eax") id, options(nomem, nostack)); }
+        unsafe {
+            asm!("cpuid", out("eax") id, options(nomem, nostack));
+        }
         CpuId(id)
     }
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(not(target_arch = "x86_64"))]
     {
         CpuId(0)
     }

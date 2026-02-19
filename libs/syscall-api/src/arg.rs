@@ -1,7 +1,7 @@
 //! System call argument structures
 
 /// System call arguments
-/// 
+///
 /// This is passed to the syscall instruction with each argument
 /// in a specific register.
 #[repr(C)]
@@ -30,14 +30,14 @@ impl SyscallArgs {
             arg5: 0,
         }
     }
-    
+
     /// Create a syscall with 1 argument
     #[inline]
     pub const fn with_arg0(mut self, arg0: u64) -> Self {
         self.arg0 = arg0;
         self
     }
-    
+
     /// Create a syscall with 2 arguments
     #[inline]
     pub const fn with_args(mut self, arg0: u64, arg1: u64) -> Self {
@@ -45,7 +45,7 @@ impl SyscallArgs {
         self.arg1 = arg1;
         self
     }
-    
+
     /// Create a syscall with 3 arguments
     #[inline]
     pub const fn with_3args(mut self, arg0: u64, arg1: u64, arg2: u64) -> Self {
@@ -54,7 +54,7 @@ impl SyscallArgs {
         self.arg2 = arg2;
         self
     }
-    
+
     /// Create a syscall with 4 arguments
     #[inline]
     pub const fn with_4args(mut self, arg0: u64, arg1: u64, arg2: u64, arg3: u64) -> Self {

@@ -9,3 +9,4 @@ path = "src/main.rs"
 
 [dependencies]
 syscall-api = { path = "../../libs/syscall-api" }
+common = { path = "../common" }

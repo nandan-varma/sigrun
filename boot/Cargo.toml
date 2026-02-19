@@ -10,9 +10,13 @@ name = "bootloader"
 path = "src/main.rs"
 
 [dependencies]
-uefi = "0.36"
+uefi = { version = "0.36", features = ["alloc"] }
 log = "0.4"
 
+[profile.dev]
+panic = "abort"
+
 [profile.release]
+panic = "abort"
 opt-level = "z"
 lto = true

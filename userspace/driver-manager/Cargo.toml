@@ -9,4 +9,12 @@ path = "src/main.rs"
 
 [dependencies]
 syscall-api = { path = "../../libs/syscall-api" }
+common = { path = "../common" }
 log = "0.4"
+bitflags = "2.6"
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"

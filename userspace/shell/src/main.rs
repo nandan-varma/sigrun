@@ -5,15 +5,57 @@
 #![no_std]
 #![forbid(unsafe_op_in_unsafe_fn)]
 
+extern crate alloc;
 extern crate common;
 extern crate syscall_api;
 
 pub mod interpreter;
 
+use alloc::string::ToString;
 use interpreter::Parser;
 use syscall_api::{SyscallArgs, SYSCALL_READ, SYSCALL_WRITE};
 
-pub fn main() -> ! {
+use core::alloc::{GlobalAlloc, Layout};
+use core::sync::atomic::{AtomicUsize, Ordering};
+
+#[global_allocator]
+static ALLOCATOR: BumpAllocator = BumpAllocator::new();
+
+struct BumpAllocator {
+    offset: AtomicUsize,
+    size: usize,
+}
+
+impl BumpAllocator {
+    const fn new() -> Self {
+        Self { 
+            offset: AtomicUsize::new(0), 
+            size: 64 * 1024 
+        }
+    }
+}
+
+unsafe impl GlobalAlloc for BumpAllocator {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        let start = (self.offset.load(Ordering::Relaxed) + layout.align() - 1) & !(layout.align() - 1);
+        let end = start + layout.size();
+        if end > self.size {
+            core::ptr::null_mut()
+        } else {
+            self.offset.store(end, Ordering::Relaxed);
+            start as *mut u8
+        }
+    }
+
+    unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {}
+}
+
+#[panic_handler]
+fn panic(_info: &core::panic::PanicInfo) -> ! {
+    loop {}
+}
+
+pub fn main() {
     println("SIGRUN Shell v0.1");
     println("Type 'help' for commands\n");
     
@@ -72,7 +114,7 @@ impl Shell {
     }
 
     fn execute_line(&mut self, input: &[u8]) {
-        let trimmed = input.trim();
+        let trimmed = trim_bytes(input);
         
         if trimmed.is_empty() {
             return;
@@ -81,7 +123,7 @@ impl Shell {
         let mut parser = Parser::new(trimmed);
         
         match parser.parse() {
-            Some((cmd, args)) => self.execute(cmd, args),
+            Some((cmd, args)) => self.execute(cmd, &args),
             None => println("Parse error"),
         }
     }
@@ -101,25 +143,25 @@ impl Shell {
             b"clear" => self.cmd_clear(),
             _ => {
                 print("Unknown command: ");
-                println_bytes(cmd);
+                print_bytes(cmd);
             }
         }
     }
 
     fn cmd_help(&self) {
         println("Available commands:");
-        println!("  help     - Show this help message");
-        println!("  echo     - Print text");
-        println!("  pwd      - Print working directory");
-        println!("  ls       - List directory contents");
-        println!("  cd       - Change directory");
-        println!("  cat      - Display file contents");
-        println!("  ps       - List processes");
-        println!("  hostname - Show hostname");
-        println!("  date     - Show current date/time");
-        println!("  whoami   - Show current user");
-        println!("  clear    - Clear screen");
-        println!("  exit     - Exit shell");
+        println("  help     - Show this help message");
+        println("  echo     - Print text");
+        println("  pwd      - Print working directory");
+        println("  ls       - List directory contents");
+        println("  cd       - Change directory");
+        println("  cat      - Display file contents");
+        println("  ps       - List processes");
+        println("  hostname - Show hostname");
+        println("  date     - Show current date/time");
+        println("  whoami   - Show current user");
+        println("  clear    - Clear screen");
+        println("  exit     - Exit shell");
     }
 
     fn cmd_echo(&self, args: &[&[u8]]) {
@@ -133,18 +175,18 @@ impl Shell {
     }
 
     fn cmd_pwd(&self) {
-        println_bytes(&self.current_dir[..self.current_dir_len]);
+        print_bytes(&self.current_dir[..self.current_dir_len]);
         println("");
     }
 
     fn cmd_ls(&self) {
-        println!(".");
-        println!("..");
-        println!("bin");
-        println!("etc");
-        println!("home");
-        println!("tmp");
-        println!("usr");
+        println(".");
+        println("..");
+        println("bin");
+        println("etc");
+        println("home");
+        println("tmp");
+        println("usr");
     }
 
     fn cmd_cd(&mut self, args: &[&[u8]]) {
@@ -189,41 +231,41 @@ impl Shell {
 
     fn cmd_cat(&self, args: &[&[u8]]) {
         if args.is_empty() {
-            println!("Usage: cat <file>");
+            println("Usage: cat <file>");
             return;
         }
         
         let file = args[0];
         
         if file == b"/welcome.txt" || file == b"welcome.txt" {
-            println!("Welcome to SIGRUN!");
-            println!("This is an immutable filesystem.");
+            println("Welcome to SIGRUN!");
+            println("This is an immutable filesystem.");
         } else {
             print("cat: ");
-            println_bytes(file);
+            print_bytes(file);
             println(": No such file or directory");
         }
     }
 
     fn cmd_ps(&self) {
-        println!("  PID TTY          TIME CMD");
-        println!("    1 ?        00:00:00 init");
-        println!("    2 ?        00:00:00 driver-manager");
-        println!("    3 ?        00:00:00 filesystem");
-        println!("    4 ?        00:00:00 network");
-        println!("  100 ?        00:00:00 shell");
+        println("  PID TTY          TIME CMD");
+        println("    1 ?        00:00:00 init");
+        println("    2 ?        00:00:00 driver-manager");
+        println("    3 ?        00:00:00 filesystem");
+        println("    4 ?        00:00:00 network");
+        println("  100 ?        00:00:00 shell");
     }
 
     fn cmd_hostname(&self) {
-        println!("sigrun");
+        println("sigrun");
     }
 
     fn cmd_date(&self) {
-        println!("Thu Feb 19 00:00:00 UTC 2026");
+        println("Thu Feb 19 00:00:00 UTC 2026");
     }
 
     fn cmd_whoami(&self) {
-        println!("root");
+        println("root");
     }
 
     fn cmd_clear(&self) {
@@ -258,4 +300,25 @@ fn print_bytes(bytes: &[u8]) {
 fn println(s: &str) {
     print(s);
     print("\n");
+}
+
+fn trim_bytes(bytes: &[u8]) -> &[u8] {
+    let mut start = 0;
+    let mut end = bytes.len();
+    
+    while start < end {
+        match bytes[start] {
+            b' ' | b'\t' | b'\n' | b'\r' => start += 1,
+            _ => break,
+        }
+    }
+    
+    while end > start {
+        match bytes[end - 1] {
+            b' ' | b'\t' | b'\n' | b'\r' => end -= 1,
+            _ => break,
+        }
+    }
+    
+    &bytes[start..end]
 }

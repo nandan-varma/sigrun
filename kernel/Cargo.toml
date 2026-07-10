@@ -5,9 +5,11 @@ edition.workspace = true
 license.workspace = true
 authors.workspace = true
 
+[target.'cfg(target_arch = "x86_64")'.dependencies]
+# x86_64 specific dependencies can go here
+
 [dependencies]
 bitflags.workspace = true
-log.workspace = true
 spin.workspace = true
 syscall-api = { path = "../libs/syscall-api" }
 
@@ -18,7 +20,3 @@ optional = true
 [features]
 default = []
 
-[profile.release]
-opt-level = "z"
-lto = true
-codegen-units = 1

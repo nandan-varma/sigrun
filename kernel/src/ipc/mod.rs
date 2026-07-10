@@ -63,17 +63,55 @@ impl fmt::Display for IpcError {
     }
 }
 
+impl From<ChannelError> for IpcError {
+    fn from(e: ChannelError) -> Self {
+        match e {
+            ChannelError::InvalidEndpoint => Self::InvalidEndpoint,
+            ChannelError::QueueClosed => Self::ChannelClosed,
+            ChannelError::QueueFull => Self::QueueFull,
+            ChannelError::QueueEmpty => Self::QueueEmpty,
+            ChannelError::Timeout => Self::Timeout,
+            ChannelError::PermissionDenied => Self::PermissionDenied,
+            ChannelError::CreationFailed => Self::CreationFailed,
+            ChannelError::ProcessNotFound => Self::ProcessNotFound,
+        }
+    }
+}
+
+impl From<QueueError> for IpcError {
+    fn from(e: QueueError) -> Self {
+        match e {
+            QueueError::Full => Self::QueueFull,
+            QueueError::Empty => Self::QueueEmpty,
+            QueueError::Closed => Self::ChannelClosed,
+            QueueError::InvalidCapacity => Self::CreationFailed,
+        }
+    }
+}
+
+impl From<ShmError> for IpcError {
+    fn from(e: ShmError) -> Self {
+        match e {
+            ShmError::RegionNotFound => Self::InvalidEndpoint,
+            ShmError::MappingFailed => Self::CreationFailed,
+            ShmError::InvalidHandle => Self::InvalidEndpoint,
+            ShmError::PermissionDenied => Self::PermissionDenied,
+            ShmError::OutOfMemory => Self::OutOfMemory,
+        }
+    }
+}
+
 /// Initialize IPC subsystem
 pub fn init() {
-    log::info!("  - IPC subsystem initializing...");
+    crate::log::info_formatted("  - IPC subsystem initializing...");
 
     syscall::init();
 
-    log::info!("  - Message types registered");
-    log::info!("  - Channel manager initialized");
-    log::info!("  - Notification system ready");
-    log::info!("  - Shared memory manager ready");
-    log::info!("  - IPC syscall handlers registered");
+    crate::log::info_formatted("  - Message types registered");
+    crate::log::info_formatted("  - Channel manager initialized");
+    crate::log::info_formatted("  - Notification system ready");
+    crate::log::info_formatted("  - Shared memory manager ready");
+    crate::log::info_formatted("  - IPC syscall handlers registered");
 }
 
 /// Create a new IPC channel between two processes
@@ -104,12 +142,10 @@ pub fn destroy_channel(channel_id: u64) -> Result<(), IpcError> {
 /// Send a message through a channel
 pub fn send_message(channel_id: u64, endpoint_id: u64, msg: Message) -> Result<(), IpcError> {
     let manager = get_manager();
-    let channel = manager
+    manager
         .channels
         .get_channel(ChannelId(channel_id))
-        .ok_or(IpcError::InvalidEndpoint)?;
-
-    channel
+        .ok_or(IpcError::InvalidEndpoint)?
         .lock()
         .send(EndpointId(endpoint_id), msg)
         .map_err(|_| IpcError::ChannelClosed)
@@ -118,12 +154,10 @@ pub fn send_message(channel_id: u64, endpoint_id: u64, msg: Message) -> Result<(
 /// Receive a message from a channel
 pub fn recv_message(channel_id: u64, endpoint_id: u64) -> Result<Message, IpcError> {
     let manager = get_manager();
-    let channel = manager
+    manager
         .channels
         .get_channel(ChannelId(channel_id))
-        .ok_or(IpcError::InvalidEndpoint)?;
-
-    channel
+        .ok_or(IpcError::InvalidEndpoint)?
         .lock()
         .recv(EndpointId(endpoint_id))
         .map_err(|_| IpcError::ChannelClosed)
@@ -132,12 +166,10 @@ pub fn recv_message(channel_id: u64, endpoint_id: u64) -> Result<Message, IpcErr
 /// Perform an RPC-style call through a channel
 pub fn call(channel_id: u64, endpoint_id: u64, request: Message) -> Result<Message, IpcError> {
     let manager = get_manager();
-    let channel = manager
+    manager
         .channels
         .get_channel(ChannelId(channel_id))
-        .ok_or(IpcError::InvalidEndpoint)?;
-
-    channel
+        .ok_or(IpcError::InvalidEndpoint)?
         .lock()
         .call(EndpointId(endpoint_id), request)
         .map_err(|_| IpcError::Timeout)

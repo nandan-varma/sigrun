@@ -31,9 +31,9 @@ impl LapicTimer {
     }
 
     pub fn init(&mut self) -> Result<(), LapicError> {
-        log::info!("    - LAPIC timer: Initializing");
+        crate::log::info_formatted("    - LAPIC timer: Initializing");
         self.running = false;
-        log::info!("    - LAPIC timer: Initialized on CPU {}", self.id);
+        crate::log::info_formatted("    - LAPIC timer: Initialized on CPU {}");
         Ok(())
     }
 
@@ -88,8 +88,8 @@ impl core::fmt::Display for LapicError {
 }
 
 pub fn init() {
-    log::info!("  - Initializing LAPIC timer subsystem");
-    log::info!("  - LAPIC timer ready");
+    crate::log::info_formatted("  - Initializing LAPIC timer subsystem");
+    crate::log::info_formatted("  - LAPIC timer ready");
 }
 
 pub fn start_timer(count: u32) {}

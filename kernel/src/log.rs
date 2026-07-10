@@ -1,38 +1,42 @@
-//! Kernel logging subsystem
+//! Kernel logging subsystem - writes to COM1 serial port
 
-/// Initialize early logging (before memory manager)
 pub fn early_init() {
-    // Would set up early console output
-    // For now, we just have a no-op that would be replaced with actual serial I/O
+    #[cfg(target_arch = "x86_64")]
+    crate::arch::x86_64::serial::init();
 }
 
-/// Log a message at INFO level
-#[macro_export]
-macro_rules! log {
-    ($($arg:tt)*) => {
-        $crate::log::info(&format!($($arg)*));
-    };
+pub fn info(msg: &str) {
+    #[cfg(target_arch = "x86_64")]
+    crate::arch::x86_64::serial::writeln(msg);
 }
 
-/// Log at INFO level
-pub fn info(_msg: &str) {
-    #[cfg(feature = "debug")]
-    {
-        // Would output to serial/console
-        // For now, we just have a no-op
-    }
+pub fn error(msg: &str) {
+    #[cfg(target_arch = "x86_64")]
+    crate::arch::x86_64::serial::writeln(msg);
 }
 
-/// Log at ERROR level
-pub fn error(_msg: &str) {
-    // Would output to serial/console
+pub fn warn(msg: &str) {
+    #[cfg(target_arch = "x86_64")]
+    crate::arch::x86_64::serial::writeln(msg);
 }
 
-/// Debug logging (only in debug builds)
-#[cfg(feature = "debug")]
 pub fn debug(msg: &str) {
-    // Would output to serial/console
+    #[cfg(all(target_arch = "x86_64", debug_assertions))]
+    crate::arch::x86_64::serial::writeln(msg);
 }
 
-#[cfg(not(feature = "debug"))]
-pub fn debug(_msg: &str) {}
+pub fn info_formatted(msg: &str) {
+    info(msg);
+}
+
+pub fn warn_formatted(msg: &str) {
+    warn(msg);
+}
+
+pub fn error_formatted(msg: &str) {
+    error(msg);
+}
+
+pub fn debug_formatted(msg: &str) {
+    debug(msg);
+}

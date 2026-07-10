@@ -47,9 +47,9 @@ use crate::error::KernelError;
 
 /// Initialize capability system
 pub fn init() -> CapabilityManager {
-    log::info!("  - Creating root capability");
+    crate::log::info_formatted("  - Creating root capability");
     let root = CapabilityManager::new();
-    log::info!("  - Capability system ready");
+    crate::log::info_formatted("  - Capability system ready");
     root
 }
 
@@ -291,7 +291,7 @@ static GLOBAL_REGISTRY: spin::Mutex<Option<CapabilityRegistry>> = spin::Mutex::n
 pub fn init_global_registry() {
     let mut guard = GLOBAL_REGISTRY.lock();
     *guard = Some(CapabilityRegistry::new());
-    log::info!("  - Global capability registry initialized");
+    crate::log::info_formatted("  - Global capability registry initialized");
 }
 
 /// Get reference to global registry

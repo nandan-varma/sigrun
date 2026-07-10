@@ -18,9 +18,9 @@ impl HpetTimer {
     }
 
     pub fn init(&mut self) -> Result<(), HpetError> {
-        log::info!("    - HPET: Initializing HPET timer");
+        crate::log::info_formatted("    - HPET: Initializing HPET timer");
         self.available = false;
-        log::info!("    - HPET: Timer initialized");
+        crate::log::info_formatted("    - HPET: Timer initialized");
         Ok(())
     }
 
@@ -55,6 +55,6 @@ impl core::fmt::Display for HpetError {
 }
 
 pub fn init() {
-    log::info!("  - Initializing HPET timer subsystem");
-    log::info!("  - HPET timer ready (software simulation)");
+    crate::log::info_formatted("  - Initializing HPET timer subsystem");
+    crate::log::info_formatted("  - HPET timer ready (software simulation)");
 }

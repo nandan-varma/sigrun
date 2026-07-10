@@ -16,7 +16,7 @@ use super::message::Deadline;
 static NOTIFICATION_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub struct NotificationId(u64);
+pub struct NotificationId(pub u64);
 
 impl NotificationId {
     pub fn new() -> Self {

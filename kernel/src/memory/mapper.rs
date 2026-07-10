@@ -46,16 +46,14 @@ impl PageTableMapper {
         &mut self,
         pml4_idx: usize,
     ) -> Result<&'static mut PageTable, MemoryError> {
-        let entry = &mut self.pml4.entries[pml4_idx];
-
-        if !entry.is_present() {
+        if !self.pml4.entries[pml4_idx].is_present() {
             let frame = self.allocate_table()?;
-            let mut new_table = &mut *(frame.start.as_mut_ptr::<PageTable>());
+            let new_table = &mut *(frame.start.as_mut_ptr::<PageTable>());
             new_table.clear();
-            entry.set(frame, PageTableFlags::PRESENT | PageTableFlags::WRITABLE);
+            self.pml4.entries[pml4_idx].set(frame, PageTableFlags::PRESENT | PageTableFlags::WRITABLE);
         }
 
-        Ok(&mut *(entry.frame().start.as_mut_ptr::<PageTable>()))
+        Ok(&mut *(self.pml4.entries[pml4_idx].frame().start.as_mut_ptr::<PageTable>()))
     }
 
     unsafe fn get_or_create_pd(
@@ -63,20 +61,18 @@ impl PageTableMapper {
         pdpt: &'static mut PageTable,
         pdpt_idx: usize,
     ) -> Result<&'static mut PageTable, MemoryError> {
-        let entry = &mut pdpt.entries[pdpt_idx];
-
-        if !entry.is_present() {
+        if !pdpt.entries[pdpt_idx].is_present() {
             let frame = self.allocate_table()?;
-            let mut new_table = &mut *(frame.start.as_mut_ptr::<PageTable>());
+            let new_table = &mut *(frame.start.as_mut_ptr::<PageTable>());
             new_table.clear();
-            entry.set(frame, PageTableFlags::PRESENT | PageTableFlags::WRITABLE);
+            pdpt.entries[pdpt_idx].set(frame, PageTableFlags::PRESENT | PageTableFlags::WRITABLE);
         }
 
-        if entry.is_huge() {
+        if pdpt.entries[pdpt_idx].is_huge() {
             return Err(MemoryError::AlreadyMapped);
         }
 
-        Ok(&mut *(entry.frame().start.as_mut_ptr::<PageTable>()))
+        Ok(&mut *(pdpt.entries[pdpt_idx].frame().start.as_mut_ptr::<PageTable>()))
     }
 
     unsafe fn get_or_create_pt(
@@ -84,20 +80,18 @@ impl PageTableMapper {
         pd: &'static mut PageTable,
         pd_idx: usize,
     ) -> Result<&'static mut PageTable, MemoryError> {
-        let entry = &mut pd.entries[pd_idx];
-
-        if !entry.is_present() {
+        if !pd.entries[pd_idx].is_present() {
             let frame = self.allocate_table()?;
-            let mut new_table = &mut *(frame.start.as_mut_ptr::<PageTable>());
+            let new_table = &mut *(frame.start.as_mut_ptr::<PageTable>());
             new_table.clear();
-            entry.set(frame, PageTableFlags::PRESENT | PageTableFlags::WRITABLE);
+            pd.entries[pd_idx].set(frame, PageTableFlags::PRESENT | PageTableFlags::WRITABLE);
         }
 
-        if entry.is_huge() {
+        if pd.entries[pd_idx].is_huge() {
             return Err(MemoryError::AlreadyMapped);
         }
 
-        Ok(&mut *(entry.frame().start.as_mut_ptr::<PageTable>()))
+        Ok(&mut *(pd.entries[pd_idx].frame().start.as_mut_ptr::<PageTable>()))
     }
 }
 

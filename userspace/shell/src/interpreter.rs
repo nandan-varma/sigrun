@@ -1,5 +1,10 @@
 //! Command interpreter for the shell
 
+use alloc::string::String;
+use alloc::vec::Vec;
+
+extern crate alloc;
+
 pub struct Parser {
     input: usize,
     len: usize,

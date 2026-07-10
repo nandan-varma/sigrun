@@ -127,5 +127,5 @@ impl Default for MonotonicClock {
 }
 
 pub fn init() {
-    log::info!("    - Clock subsystem initialized");
+    crate::log::info_formatted("    - Clock subsystem initialized");
 }

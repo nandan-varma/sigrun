@@ -4,13 +4,14 @@ pub mod apic;
 pub mod gdt;
 pub mod idt;
 pub mod paging;
+pub mod serial;
 
 /// Physical address type
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PhysAddr(pub u64);
 
 impl PhysAddr {
-    pub fn new(addr: u64) -> Self {
+    pub const fn new(addr: u64) -> Self {
         Self(addr)
     }
     pub fn as_u64(self) -> u64 {
@@ -37,7 +38,7 @@ impl PhysAddr {
 pub struct VirtAddr(u64);
 
 impl VirtAddr {
-    pub fn new(addr: u64) -> Self {
+    pub const fn new(addr: u64) -> Self {
         Self(addr)
     }
     pub const fn as_u64(self) -> u64 {

@@ -1,8 +1,9 @@
 # Build artifacts
 /target/
-/build/boot/*.efi
-/build/kernel/*.bin
-/build/userspace/*
+
+# OS
+.DS_Store
+Thumbs.db
 
 # IDE
 .vscode/
@@ -11,20 +12,16 @@
 *.swo
 *~
 
-# OS
-.DS_Store
-Thumbs.db
-
 # Logs
 *.log
-progress.log
 
 # Coverage
 target/coverage/
 
-# Temporary files
+# QEMU images
+*.qcow2
+*.img
+
+# Temporary
 *.tmp
 *.bak
-
-# QEMU
-*.qcow2

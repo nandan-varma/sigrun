@@ -55,7 +55,7 @@ pub fn get_manager() -> &'static IpcManager {
 
 pub fn init() {
     IPC_MANAGER.call_once(IpcManager::init);
-    log::info!("  - IPC subsystem initialized with syscall support");
+    crate::log::info_formatted("  - IPC subsystem initialized with syscall support");
 }
 
 pub fn handle_ipc_create(args: &SyscallArgs, caller_pid: u64) -> SyscallResult {
@@ -218,12 +218,10 @@ pub fn sys_ipc_destroy(channel_id: u64) -> Result<(), IpcError> {
 
 pub fn sys_ipc_send(channel_id: u64, endpoint_id: u64, msg: &Message) -> Result<(), IpcError> {
     let manager = get_manager();
-    let channel = manager
+    manager
         .channels
         .get_channel(ChannelId(channel_id))
-        .ok_or(IpcError::InvalidEndpoint)?;
-
-    channel
+        .ok_or(IpcError::InvalidEndpoint)?
         .lock()
         .send(EndpointId(endpoint_id), msg.clone())
         .map_err(|_| IpcError::ChannelClosed)?;
@@ -233,12 +231,10 @@ pub fn sys_ipc_send(channel_id: u64, endpoint_id: u64, msg: &Message) -> Result<
 
 pub fn sys_ipc_recv(channel_id: u64, endpoint_id: u64) -> Result<Message, IpcError> {
     let manager = get_manager();
-    let channel = manager
+    manager
         .channels
         .get_channel(ChannelId(channel_id))
-        .ok_or(IpcError::InvalidEndpoint)?;
-
-    channel
+        .ok_or(IpcError::InvalidEndpoint)?
         .lock()
         .recv(EndpointId(endpoint_id))
         .map_err(|_| IpcError::ChannelClosed)
@@ -250,12 +246,10 @@ pub fn sys_ipc_call(
     request: &Message,
 ) -> Result<Message, IpcError> {
     let manager = get_manager();
-    let channel = manager
+    manager
         .channels
         .get_channel(ChannelId(channel_id))
-        .ok_or(IpcError::InvalidEndpoint)?;
-
-    channel
+        .ok_or(IpcError::InvalidEndpoint)?
         .lock()
         .call(EndpointId(endpoint_id), request.clone())
         .map_err(|_| IpcError::Timeout)

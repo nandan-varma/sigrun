@@ -1,7 +1,7 @@
 [package]
 name = "network"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [[bin]]
 name = "network"
@@ -10,3 +10,4 @@ path = "src/main.rs"
 [dependencies]
 syscall-api = { path = "../../libs/syscall-api" }
 common = { path = "../common" }
+bitflags = "2.6"

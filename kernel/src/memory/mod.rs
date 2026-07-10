@@ -200,17 +200,17 @@ impl MemoryManager {
 unsafe impl Sync for MemoryManager {}
 
 pub fn init(boot_params: &BootParams) -> Result<MemoryManager, MemoryError> {
-    log::info!("  - Parsing memory map");
+    crate::log::info_formatted("  - Parsing memory map");
 
-    log::info!("  - Initializing frame allocator");
+    crate::log::info_formatted("  - Initializing frame allocator");
 
     let kernel_pml4_phys = unsafe { read_cr3() };
     let kernel_pml4_frame = PhysFrame::new(kernel_pml4_phys, 0);
 
-    log::info!("  - Creating kernel address space");
+    crate::log::info_formatted("  - Creating kernel address space");
     let manager = MemoryManager::new(kernel_pml4_frame, boot_params)?;
 
-    log::info!("  - Memory manager initialized");
+    crate::log::info_formatted("  - Memory manager initialized");
     Ok(manager)
 }
 

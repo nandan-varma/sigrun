@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    name: Check & Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install nightly toolchain
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt, clippy, rust-src
+          targets: x86_64-unknown-none
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      - name: Check kernel (bare metal)
+        run: cargo check -p kernel --target x86_64-unknown-none
+
+      - name: Check bootloader (bare metal)
+        run: cargo check -p boot --target x86_64-unknown-none
+
+      - name: Check userspace
+        run: cargo check -p init -p driver-manager -p filesystem -p network -p shell
+
+      - name: Unit tests (host target)
+        run: cargo test --workspace
+
+      - name: Clippy (host target)
+        run: cargo clippy --workspace -- -D warnings
+
+  qemu:
+    name: QEMU Boot Test
+    runs-on: ubuntu-latest
+    needs: check
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install nightly toolchain
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
+          targets: x86_64-unknown-none
+
+      - name: Install QEMU
+        run: sudo apt-get install -y qemu-system-x86
+
+      - name: Build kernel
+        run: cargo build -p kernel --target x86_64-unknown-none
+
+      - name: Boot test
+        run: chmod +x scripts/run.sh && ./scripts/run.sh --test

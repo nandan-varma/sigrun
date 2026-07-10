@@ -42,8 +42,8 @@ impl CapabilitySlot {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct EndpointId(u64);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct EndpointId(pub u64);
 
 impl EndpointId {
     pub fn new() -> Self {

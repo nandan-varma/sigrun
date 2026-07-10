@@ -1,146 +1,165 @@
-# SIGRUN - Next-Generation Capability-Based Microkernel OS
+# SIGRUN
 
-A production-grade, research-quality microkernel operating system written in Rust, designed for cloud-native and virtualization-aware workloads.
-
-## Design Goals
-
-- **Microkernel Architecture**: Minimal kernel with drivers, filesystems, and services in userspace
-- **Capability-Based Security**: Object-capability model with unforgeable references
-- **Immutable System**: Read-only root filesystem with atomic updates
-- **Cloud-Native**: Optimized for virtualized environments (KVM, Xen, VMware)
-- **Rust-First**: Memory-safe kernel with zero-CVV and formal verification paths
+A capability-based microkernel OS written in Rust, targeting x86_64 (ARM64 planned).
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────┐
-│           USERSPACE SERVICES             │
-│  ┌────────┐ ┌────────┐ ┌────────────┐  │
-│  │  Init  │ │ Driver │ │  Filesystem│  │
-│  │Service │ │ Manager│ │   Server   │  │
-│  └────┬───┘ └───┬────┘ └─────┬──────┘  │
-└───────┼─────────┼────────────┼──────────┘
-        │         │            │
-        │    CAPABILITY IPC     │
-        ▼         ▼            ▼
-┌─────────────────────────────────────────┐
-│            KERNEL CORE                  │
-│  Scheduler │ IPC │ Memory │ Capability  │
-│  Interrupt │ Timer                       │
-└─────────────────────────────────────────┘
+┌──────────────────────────────────────┐
+│           USERSPACE                  │
+│  init  │  driver-mgr  │  shell  │ … │
+├──────────────────────────────────────┤
+│   IPC (capability-based messaging)   │
+├──────────────────────────────────────┤
+│              KERNEL                  │
+│  memory │ scheduler │ interrupt      │
+│  timer  │ ipc       │ capability     │
+├──────────────────────────────────────┤
+│         UEFI BOOTLOADER              │
+└──────────────────────────────────────┘
 ```
 
-## Directory Structure
+## Repository Layout
 
 ```
 sigrun/
-├── boot/           # UEFI bootloader
-├── kernel/         # Microkernel core
-├── userspace/      # User-space services
-│   ├── init/      # PID 1 init service
-│   ├── driver-manager/ # Driver framework
-│   ├── filesystem/# Filesystem server
-│   └── network/   # Network stack
-├── libs/          # Shared libraries
-└── build/         # Build scripts
+├── boot/              # UEFI bootloader
+├── kernel/            # Microkernel core
+│   └── src/
+│       ├── arch/      # x86_64: GDT, IDT, APIC, serial
+│       ├── memory/    # Frame allocator, page tables, heap
+│       ├── scheduler/ # Tasks, runqueue, context switch
+│       ├── timer/     # HPET, LAPIC timer, timer wheel
+│       ├── interrupt/ # IDT handlers, APIC routing
+│       ├── ipc/       # Channels, endpoints, shared memory
+│       └── capability/# Capability tables and rights
+├── userspace/
+│   ├── init/          # PID 1
+│   ├── driver-manager/# Driver framework + PCI/virtio
+│   ├── filesystem/    # VFS server
+│   ├── network/       # TCP/UDP stack
+│   ├── shell/         # Command interpreter
+│   └── common/        # Shared userspace utilities
+├── libs/
+│   ├── syscall-api/   # Syscall numbers and argument types
+│   └── cap-std/       # Capability standard library
+└── scripts/           # Build, run, and test helpers
 ```
 
-## Quick Start
+## Status
 
-### Prerequisites
+| Subsystem       | Status         |
+|-----------------|----------------|
+| Bootloader      | In progress    |
+| Memory (frame)  | Implemented    |
+| Memory (paging) | Implemented    |
+| Kernel heap     | Implemented    |
+| Scheduler       | Scaffolded     |
+| Timer (HPET)    | Scaffolded     |
+| Interrupts      | Scaffolded     |
+| IPC channels    | Scaffolded     |
+| Capabilities    | Scaffolded     |
+| Serial output   | Implemented    |
+| Userspace init  | Scaffolded     |
+| Network stack   | Scaffolded     |
+| Filesystem      | Scaffolded     |
+
+The kernel compiles and has a working entry point (`kmain`) that initialises subsystems
+in order and writes boot messages over the COM1 serial port.
+
+## Prerequisites
+
+**Rust (nightly via rustup)**
 
 ```bash
-# Install Rust (nightly)
-rustup install nightly
-rustup target add x86_64-unknown-none
-
-# Install QEMU with OVMF
-brew install qemu  # macOS
-# or
-apt install qemu ovmf  # Linux
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+rustup toolchain install nightly
+rustup target add x86_64-unknown-none --toolchain nightly
+rustup component add rust-src --toolchain nightly
 ```
 
-### Build
+**QEMU**
 
 ```bash
-# Build everything
-cargo build --workspace
+# macOS
+brew install qemu
 
-# Build specific components
-cargo build -p boot     # Bootloader
-cargo build -p kernel   # Kernel
+# Debian/Ubuntu
+apt install qemu-system-x86
 ```
 
-### Run in QEMU
+**OVMF** (UEFI firmware for QEMU)
 
 ```bash
-./build/scripts/qemu.sh --kernel build/kernel.bin
+# macOS — included with QEMU from Homebrew under:
+# $(brew --prefix)/share/qemu/edk2-x86_64-code.fd
+
+# Debian/Ubuntu
+apt install ovmf
 ```
 
-## Development Tracks
-
-The project is developed across 8 parallel tracks:
-
-| Track | Agent | Area |
-|-------|-------|------|
-| 1 | Bootloader Engineer | UEFI boot, kernel entry |
-| 2 | Memory Engineer | VMM, page tables |
-| 3 | Scheduler Engineer | Task scheduling, timer |
-| 4 | Interrupt Engineer | IDT, APIC |
-| 5 | IPC Engineer | Message passing |
-| 6 | Security Engineer | Capability system |
-| 7 | Userspace Engineer | Init, services |
-| 8 | Driver Engineer | Virtio, FS, network |
-
-See [ROADMAP.md](ROADMAP.md) for detailed parallel development plan.
-
-## Features
-
-- [x] UEFI bootloader
-- [ ] Virtual memory manager
-- [ ] Multi-level feedback queue scheduler
-- [ ] Lock-free IPC with shared memory fast path
-- [ ] Object-capability security model
-- [ ] Virtio drivers (block, network)
-- [ ] Immutable root filesystem
-- [ ] TCP/IP network stack
-- [ ] Formal verification foundations
-
-## Security Model
-
-Every resource in SIGRUN is represented by a capability - an unforgeable reference that encodes access rights. This eliminates:
-- No global namespaces
-- No ambient authority
-- No confused deputy problems
-
-## Performance Targets
-
-- Boot time: < 150ms (VM)
-- IPC latency: < 2μs
-- Kernel size: < 5MB
-- Memory overhead: Minimal
-- Scales to: 64 cores
-
-## Testing
+## Build
 
 ```bash
-# Run all tests
+# Check everything compiles
+cargo check --workspace
+
+# Build bootloader
+cargo build -p boot --target x86_64-unknown-none
+
+# Build kernel
+cargo build -p kernel --target x86_64-unknown-none
+
+# Build all userspace
+cargo build -p init -p driver-manager -p filesystem -p network -p shell
+
+# Release build
+cargo build --workspace --release
+```
+
+## Run in QEMU
+
+```bash
+./scripts/run.sh
+```
+
+Run with GDB debugging:
+
+```bash
+./scripts/run.sh --debug
+# In another terminal:
+gdb target/x86_64-unknown-none/debug/kernel -ex "target remote :1234"
+```
+
+## Test
+
+```bash
+# Unit tests (host target)
 cargo test --workspace
 
-# Run QEMU integration tests
-./build/scripts/test-qemu.sh
+# Clippy
+cargo clippy --workspace -- -D warnings
 
-# Run with debug
-./build/scripts/qemu.sh --debug --kernel build/kernel.bin
+# Format check
+cargo fmt --all -- --check
 ```
+
+## Design Goals
+
+- **Minimal kernel surface** — memory, scheduling, IPC, and capabilities only; everything else in userspace
+- **Capability-based security** — all resource access goes through unforgeable capability references
+- **Immutable userspace** — read-only root filesystem with atomic updates (planned)
+- **Cloud/VM-aware** — virtio drivers, OVMF/UEFI boot, KVM acceleration
+
+## Contributing
+
+1. Fork and create a branch (`git checkout -b feat/my-thing`)
+2. Keep commits focused; run `cargo fmt --all` before committing
+3. Add tests for new logic
+4. Open a pull request — CI must pass
+
+See [ROADMAP.md](ROADMAP.md) for planned work and known gaps.
 
 ## License
 
 MIT OR Apache-2.0
-
-## References
-
-- seL4: Formal verification microkernel
-- Redox OS: Rust microkernel
-- Fuchsia: Modern OS design
-- Capability Hardware Extensions (CHERI)

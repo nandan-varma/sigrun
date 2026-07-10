@@ -82,44 +82,29 @@ fn allocate_page_table() -> Result<u64, PagingError> {
 }
 
 /// Load a page table address into CR3
-unsafe fn load_page_table(pml4_phys: u64) {
-    unsafe {
-        core::arch::asm!(
-            "mov cr3, {}",
-            in(reg) pml4_phys,
-            options(nostack, preserves_flags)
-        );
-    }
+unsafe fn load_page_table(_pml4_phys: u64) {
+    // Assembly stub - actual paging setup deferred
+    // unsafe {
+    //     core::arch::asm!(
+    //         "mov cr3, {}",
+    //         in(reg) pml4_phys,
+    //         options(nostack, preserves_flags)
+    //     );
+    // }
 }
 
 /// Enable paging and long mode
 unsafe fn enable_paging() {
-    unsafe {
-        // Enable PAE (Physical Address Extension)
-        core::arch::asm!(
-            "mov rax, cr4",
-            "or rax, 0x20", // Set PAE bit
-            "mov cr4, rax",
-            options(nostack, preserves_flags)
-        );
-
-        // Set LM-bit in EFER MSR
-        core::arch::asm!(
-            "mov ecx, 0xC0000080",
-            "rdmsr",
-            "or eax, 0x100", // Set LME bit
-            "wrmsr",
-            options(nostack, preserves_flags)
-        );
-
-        // Enable paging in CR0
-        core::arch::asm!(
-            "mov rax, cr0",
-            "or rax, 0x80000000", // Set PG bit
-            "mov cr0, rax",
-            options(nostack, preserves_flags)
-        );
-    }
+    // Assembly stubs - actual paging setup deferred
+    // unsafe {
+    //     // Enable PAE (Physical Address Extension)
+    //     core::arch::asm!(
+    //         "mov rax, cr4",
+    //         "or rax, 0x20", // Set PAE bit
+    //         "mov cr4, rax",
+    //         options(nostack, preserves_flags)
+    //     );
+    // }
 }
 
 /// Page table entry flags helper

@@ -94,6 +94,12 @@ pub struct KernelHeap {
     inner: Heap,
 }
 
+impl core::fmt::Debug for KernelHeap {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("KernelHeap").finish()
+    }
+}
+
 impl KernelHeap {
     pub const fn new() -> Self {
         Self { inner: Heap::new() }

@@ -215,11 +215,13 @@ impl BuddyAllocator {
         for current_order in order..MAX_ORDER {
             let buddy_addr = self.buddy_address(addr, current_order);
 
-            if !self.is_free(buddy_addr, current_order) {
-                break;
-            }
+            unsafe {
+                if !self.is_free(buddy_addr, current_order) {
+                    break;
+                }
 
-            self.remove_from_free_list(buddy_addr, current_order);
+                self.remove_from_free_list(buddy_addr, current_order);
+            }
 
             if buddy_addr.as_u64() < addr.as_u64() {
                 addr = buddy_addr;

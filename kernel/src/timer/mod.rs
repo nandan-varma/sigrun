@@ -14,12 +14,12 @@ use core::sync::atomic::{AtomicU64, Ordering};
 static CURRENT_TIME_NS: AtomicU64 = AtomicU64::new(0);
 
 pub fn init() {
-    log::info!("  - Initializing timer subsystem");
+    crate::log::info_formatted("  - Initializing timer subsystem");
     clock::init();
     wheel::init();
     hpet::init();
     lapic::init();
-    log::info!("  - Timer subsystem ready");
+    crate::log::info_formatted("  - Timer subsystem ready");
 }
 
 pub fn current_time() -> u64 {

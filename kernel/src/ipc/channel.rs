@@ -16,7 +16,7 @@ use super::queue::{MessageQueue, QueueError, DEFAULT_QUEUE_SIZE};
 static CHANNEL_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub struct ChannelId(u64);
+pub struct ChannelId(pub u64);
 
 impl ChannelId {
     pub fn new() -> Self {

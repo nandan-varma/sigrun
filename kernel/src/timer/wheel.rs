@@ -62,14 +62,14 @@ impl TimerWheel {
         };
 
         for level in 0..NUM_WHEELS {
-            let granularity = match level {
+            let granularity: u64 = match level {
                 0 => 1_000_000,
                 1 => 8_000_000,
                 2 => 64_000_000,
                 3 => 512_000_000,
                 _ => 1_000_000_000,
             };
-            let range = granularity * WHEEL_BITS[level];
+            let range = granularity * (WHEEL_BITS[level] as u64);
 
             if expiry - now < range as u64 {
                 let idx = ((expiry / granularity) & 7) as usize;
@@ -153,7 +153,7 @@ impl Default for TimerWheel {
 static mut WHEEL: Option<TimerWheel> = None;
 
 pub fn init() {
-    log::info!("    - Timer wheel initialized");
+    crate::log::info_formatted("    - Timer wheel initialized");
 }
 
 pub fn schedule(delay_ns: u64, callback: fn()) -> TimerId {

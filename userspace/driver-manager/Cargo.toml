@@ -1,7 +1,9 @@
 [package]
 name = "driver-manager"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
 
 [[bin]]
 name = "driver-manager"
@@ -13,8 +15,3 @@ common = { path = "../common" }
 log = "0.4"
 bitflags = "2.6"
 
-[profile.dev]
-panic = "abort"
-
-[profile.release]
-panic = "abort"

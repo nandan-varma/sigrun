@@ -131,10 +131,8 @@ impl RegionList {
 
     pub fn find_mut(&mut self, addr: VirtAddr) -> Option<&mut MemoryRegion> {
         for i in 0..self.count {
-            if let Some(ref mut region) = self.regions[i] {
-                if region.contains(addr) {
-                    return Some(region);
-                }
+            if self.regions[i].as_mut()?.contains(addr) {
+                return self.regions[i].as_mut();
             }
         }
         None

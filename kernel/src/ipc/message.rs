@@ -112,6 +112,11 @@ impl Message {
         }
     }
 
+    pub fn with_flags(mut self, flags: MessageFlags) -> Self {
+        self.header.flags = flags;
+        self
+    }
+
     pub fn call(sender_pid: u64) -> Self {
         let mut msg = Self::new(MessageType::Call, sender_pid);
         msg.header.flags |= MessageFlags::REPLY_EXPECTED | MessageFlags::BLOCKING;

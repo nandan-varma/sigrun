@@ -7,6 +7,16 @@ use crate::ipv4::{IpProtocol, Ipv4Layer};
 use crate::socket::{SocketAddr, SocketTable};
 use crate::tcp::{TcpFlags, TcpLayer, TcpSegment};
 use crate::udp::{UdpDatagram, UdpLayer};
+use syscall_api::{SyscallArgs, syscall};
+
+fn println(msg: &str) {
+    let bytes = msg.as_bytes();
+    let args =
+        SyscallArgs::new(4).with_3args(1, bytes.as_ptr() as u64, bytes.len() as u64);
+    unsafe {
+        syscall(args).ok();
+    }
+}
 
 pub struct NetServer {
     eth: EthernetLayer,
@@ -34,7 +44,7 @@ impl NetServer {
     }
 
     pub fn run(&mut self) -> ! {
-        println!("Network server running...");
+        println("Network server running...");
 
         loop {
             self.process_outgoing();
@@ -82,11 +92,11 @@ impl NetServer {
             let flags = segment.header.flags();
 
             if flags.contains(TcpFlags::SYN) {
-                println!("TCP SYN received: {} -> {}", src_port, dst_port);
+                println("TCP SYN received");
             } else if flags.contains(TcpFlags::ACK) {
-                println!("TCP ACK received: {} -> {}", src_port, dst_port);
+                println("TCP ACK received");
             } else if flags.contains(TcpFlags::FIN) {
-                println!("TCP FIN received: {} -> {}", src_port, dst_port);
+                println("TCP FIN received");
             }
         }
     }
@@ -97,7 +107,7 @@ impl NetServer {
             let dst_port = datagram.dst_port();
 
             if dst_port == 53 {
-                println!("DNS request from port {}", src_port);
+                println("DNS request received");
             }
         }
     }
@@ -106,10 +116,10 @@ impl NetServer {
         if let Some(icmp) = crate::ipv4::IcmpPacket::parse(data) {
             match icmp.icmp_type {
                 8 => {
-                    println!("ICMP echo request");
+                    println("ICMP echo request");
                 }
                 0 => {
-                    println!("ICMP echo reply");
+                    println("ICMP echo reply");
                 }
                 _ => {}
             }
@@ -119,10 +129,7 @@ impl NetServer {
     fn process_arp(&mut self, data: &[u8]) {
         if let Some(arp) = crate::ethernet::ArpPacket::parse(data) {
             if arp.operation == crate::ethernet::ArpPacket::REQUEST {
-                println!(
-                    "ARP request for {:}.{:}.{:}.{:}",
-                    arp.target_ip[0], arp.target_ip[1], arp.target_ip[2], arp.target_ip[3]
-                );
+                println("ARP request received");
             }
         }
     }
@@ -196,14 +203,5 @@ impl NetServer {
 
     fn tick(&mut self) {
         // Handle timeouts, retransmissions, etc.
-    }
-}
-
-fn println(msg: &str) {
-    let bytes = msg.as_bytes();
-    let args =
-        syscall_api::SyscallArgs::new(4).with_3args(1, bytes.as_ptr() as u64, bytes.len() as u64);
-    unsafe {
-        syscall_api::syscall(args).ok();
     }
 }

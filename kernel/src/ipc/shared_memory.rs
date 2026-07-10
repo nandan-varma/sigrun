@@ -14,8 +14,8 @@ use super::endpoint::ProcessId;
 
 static SHM_REGION_COUNTER: AtomicU64 = AtomicU64::new(1);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ShmId(u64);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct ShmId(pub u64);
 
 impl ShmId {
     pub fn new() -> Self {
@@ -70,7 +70,6 @@ pub enum ShareMode {
     ReadWrite,
 }
 
-#[derive(Debug, Clone)]
 pub struct SharedMemoryRegion {
     pub id: ShmId,
     pub frames: Vec<PhysFrame>,
@@ -79,6 +78,18 @@ pub struct SharedMemoryRegion {
     pub share_mode: ShareMode,
     pub owner: ProcessId,
     ref_count: AtomicU32,
+}
+
+impl core::fmt::Debug for SharedMemoryRegion {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("SharedMemoryRegion")
+            .field("id", &self.id)
+            .field("page_count", &self.page_count)
+            .field("rights", &self.rights)
+            .field("share_mode", &self.share_mode)
+            .field("owner", &self.owner)
+            .finish()
+    }
 }
 
 impl SharedMemoryRegion {
@@ -145,7 +156,7 @@ impl SharedMemoryRegion {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct ShmHandle(u64);
 
 impl ShmHandle {
@@ -198,7 +209,7 @@ impl SharedMemoryManager {
         mode: ShareMode,
         owner: ProcessId,
     ) -> Result<Arc<SharedMemoryRegion>, ShmError> {
-        let region = SharedMemoryRegion::with_size(page_count, owner);
+        let mut region = SharedMemoryRegion::with_size(page_count, owner);
         region.rights = rights;
         region.share_mode = mode;
 

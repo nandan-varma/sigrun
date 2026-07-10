@@ -57,12 +57,12 @@ impl Scheduler {
     }
 
     pub fn create_init_process(&mut self) -> TaskId {
-        log::info!("    Creating PID 1 (init)");
+        crate::log::info("    Creating PID 1 (init)");
         TaskId::new()
     }
 
     pub fn start(&self) -> ! {
-        log::info!("    Scheduler running on CPU 0");
+        crate::log::info("    Scheduler running on CPU 0");
         loop {
             crate::arch::halt();
         }
@@ -86,5 +86,22 @@ impl Scheduler {
     }
     pub fn set_priority(&mut self, _task_id: TaskId, _priority: Priority) -> bool {
         false
+    }
+}
+
+// Module-level functions for convenience
+static mut GLOBAL_SCHEDULER: Option<Scheduler> = None;
+
+pub fn init() -> Scheduler {
+    Scheduler::init()
+}
+
+pub fn create_init_process() -> TaskId {
+    TaskId::new()
+}
+
+pub fn start() -> ! {
+    loop {
+        crate::arch::halt();
     }
 }

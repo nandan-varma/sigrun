@@ -100,34 +100,34 @@ static HANDLER_REGISTERS: AtomicU64 = AtomicU64::new(0);
 
 /// Initialize interrupt subsystem
 pub fn early_init() {
-    log::info!("  - Initializing interrupt subsystem...");
+    crate::log::info_formatted("  - Initializing interrupt subsystem...");
 
     #[cfg(target_arch = "x86_64")]
     unsafe {
         use crate::arch::x86_64::{apic, gdt, idt::Idt};
 
-        log::info!("  - Initializing GDT...");
+        crate::log::info_formatted("  - Initializing GDT...");
         gdt::init();
-        log::info!("  - GDT initialized");
+        crate::log::info_formatted("  - GDT initialized");
 
-        log::info!("  - Initializing IDT...");
+        crate::log::info_formatted("  - Initializing IDT...");
         let mut idt = Idt::new();
         install_exception_handlers(&mut idt);
         idt.load();
-        log::info!("  - IDT initialized");
+        crate::log::info_formatted("  - IDT initialized");
 
-        log::info!("  - Initializing APIC...");
+        crate::log::info_formatted("  - Initializing APIC...");
         apic::init();
-        log::info!("  - APIC initialized");
+        crate::log::info_formatted("  - APIC initialized");
 
-        log::info!("  - Enabling interrupts");
+        crate::log::info_formatted("  - Enabling interrupts");
         crate::arch::enable_interrupts();
-        log::info!("  - Interrupts enabled");
+        crate::log::info_formatted("  - Interrupts enabled");
     }
 
     #[cfg(not(target_arch = "x86_64"))]
     {
-        log::info!("  - Architecture not yet supported for interrupts");
+        crate::log::info_formatted("  - Architecture not yet supported for interrupts");
     }
 }
 
@@ -136,39 +136,39 @@ unsafe fn install_exception_handlers(idt: &mut crate::arch::x86_64::idt::Idt) {
     use crate::arch::x86_64::idt::{Idt, InterruptFrame};
 
     extern "x86-interrupt" fn divide_by_zero_handler(frame: InterruptFrame) {
-        log::error!("Divide by zero at {:#016x}", frame.rip);
+        crate::log::error_formatted("Divide by zero at {:#016x}");
     }
 
     extern "x86-interrupt" fn debug_handler(frame: InterruptFrame) {
-        log::debug!("Debug exception at {:#016x}", frame.rip);
+        crate::log::debug_formatted("Debug exception at {:#016x}");
     }
 
     extern "x86-interrupt" fn nmi_handler(frame: InterruptFrame) {
-        log::warn!("Non-maskable interrupt at {:#016x}", frame.rip);
+        crate::log::warn_formatted("Non-maskable interrupt at {:#016x}");
     }
 
     extern "x86-interrupt" fn breakpoint_handler(frame: InterruptFrame) {
-        log::info!("Breakpoint at {:#016x}", frame.rip);
+        crate::log::info_formatted("Breakpoint at {:#016x}");
     }
 
     extern "x86-interrupt" fn overflow_handler(frame: InterruptFrame) {
-        log::error!("Overflow at {:#016x}", frame.rip);
+        crate::log::error_formatted("Overflow at {:#016x}");
     }
 
     extern "x86-interrupt" fn bound_range_handler(frame: InterruptFrame) {
-        log::error!("Bound range exceeded at {:#016x}", frame.rip);
+        crate::log::error_formatted("Bound range exceeded at {:#016x}");
     }
 
     extern "x86-interrupt" fn invalid_opcode_handler(frame: InterruptFrame) {
-        log::error!("Invalid opcode at {:#016x}", frame.rip);
+        crate::log::error_formatted("Invalid opcode at {:#016x}");
     }
 
     extern "x86-interrupt" fn device_not_available_handler(frame: InterruptFrame) {
-        log::error!("Device not available at {:#016x}", frame.rip);
+        crate::log::error_formatted("Device not available at {:#016x}");
     }
 
     extern "x86-interrupt" fn double_fault_handler(frame: InterruptFrame, error: u64) {
-        log::error!(
+        crate::log::error_formatted(
             "DOUBLE FAULT at {:#016x}, error: {:#016x}",
             frame.rip,
             error
@@ -177,11 +177,11 @@ unsafe fn install_exception_handlers(idt: &mut crate::arch::x86_64::idt::Idt) {
     }
 
     extern "x86-interrupt" fn invalid_tss_handler(frame: InterruptFrame, error: u64) {
-        log::error!("Invalid TSS at {:#016x}, error: {:#016x}", frame.rip, error);
+        crate::log::error_formatted("Invalid TSS at {:#016x}, error: {:#016x}");
     }
 
     extern "x86-interrupt" fn segment_not_present_handler(frame: InterruptFrame, error: u64) {
-        log::error!(
+        crate::log::error_formatted(
             "Segment not present at {:#016x}, error: {:#016x}",
             frame.rip,
             error
@@ -189,7 +189,7 @@ unsafe fn install_exception_handlers(idt: &mut crate::arch::x86_64::idt::Idt) {
     }
 
     extern "x86-interrupt" fn stack_segment_handler(frame: InterruptFrame, error: u64) {
-        log::error!(
+        crate::log::error_formatted(
             "Stack segment fault at {:#016x}, error: {:#016x}",
             frame.rip,
             error
@@ -197,7 +197,7 @@ unsafe fn install_exception_handlers(idt: &mut crate::arch::x86_64::idt::Idt) {
     }
 
     extern "x86-interrupt" fn gpf_handler(frame: InterruptFrame, error: u64) {
-        log::error!(
+        crate::log::error_formatted(
             "General protection fault at {:#016x}, error: {:#016x}",
             frame.rip,
             error
@@ -206,25 +206,25 @@ unsafe fn install_exception_handlers(idt: &mut crate::arch::x86_64::idt::Idt) {
 
     extern "x86-interrupt" fn page_fault_handler(frame: InterruptFrame, error: u64) {
         let fault_addr = crate::arch::x86_64::paging::get_cr2();
-        log::error!(
+        crate::log::error_formatted(
             "Page fault at {:#016x} (faulting address: {:#016x})",
             frame.rip,
             fault_addr
         );
-        log::error!("  Error code: {:#016x}", error);
-        log::error!("  Present:     {}", (error >> 0) & 1 != 0);
-        log::error!("  Write:       {}", (error >> 1) & 1 != 0);
-        log::error!("  User:        {}", (error >> 2) & 1 != 0);
-        log::error!("  Reserved:    {}", (error >> 3) & 1 != 0);
-        log::error!("  Instruction: {}", (error >> 4) & 1 != 0);
+        crate::log::error_formatted("  Error code: {:#016x}");
+        crate::log::error_formatted("  Present:     {present}");
+        crate::log::error_formatted("  Write:       {write}");
+        crate::log::error_formatted("  User:        {user}");
+        crate::log::error_formatted("  Reserved:    {reserved}");
+        crate::log::error_formatted("  Instruction: {instruction}");
     }
 
     extern "x86-interrupt" fn x87_exception_handler(frame: InterruptFrame) {
-        log::error!("x87 FPU exception at {:#016x}", frame.rip);
+        crate::log::error_formatted("x87 FPU exception at {:#016x}");
     }
 
     extern "x86-interrupt" fn alignment_check_handler(frame: InterruptFrame, error: u64) {
-        log::error!(
+        crate::log::error_formatted(
             "Alignment check at {:#016x}, error: {:#016x}",
             frame.rip,
             error
@@ -232,7 +232,7 @@ unsafe fn install_exception_handlers(idt: &mut crate::arch::x86_64::idt::Idt) {
     }
 
     extern "x86-interrupt" fn simd_exception_handler(frame: InterruptFrame) {
-        log::error!("SIMD exception at {:#016x}", frame.rip);
+        crate::log::error_formatted("SIMD exception at {:#016x}");
     }
 
     idt.set_handler(exceptions::DIVISION_BY_ZERO, divide_by_zero_handler);
@@ -265,7 +265,7 @@ unsafe fn install_exception_handlers(idt: &mut crate::arch::x86_64::idt::Idt) {
 
 /// Complete initialization after memory and scheduler are ready
 pub fn init() {
-    log::info!("  - Completing interrupt subsystem initialization");
+    crate::log::info_formatted("  - Completing interrupt subsystem initialization");
 
     #[cfg(target_arch = "x86_64")]
     unsafe {
@@ -275,7 +275,7 @@ pub fn init() {
         }
     }
 
-    log::info!("  - Interrupt subsystem ready");
+    crate::log::info_formatted("  - Interrupt subsystem ready");
 }
 
 /// Register an interrupt handler
@@ -294,7 +294,7 @@ pub fn register_handler(irq: u8, handler: fn()) -> Result<(), IrqError> {
         INTERRUPT_MANAGER.handlers[vector as usize] = Some(transmute_handler(handler));
     }
 
-    log::debug!("Registered handler for IRQ {}", irq);
+    crate::log::debug_formatted("Registered handler for IRQ {}");
     Ok(())
 }
 
@@ -314,7 +314,7 @@ pub fn enable_irq(irq: u8) {
             apic::LOCAL_APIC.write_reg(apic::Register::TaskPriority, 0);
         }
 
-        log::debug!("Enabled IRQ {} (vector {})", irq, vector);
+        crate::log::debug_formatted("Enabled IRQ {} (vector {})");
     }
 }
 
@@ -328,7 +328,7 @@ pub fn disable_irq(irq: u8) {
                 let _ = apic::LOCAL_APIC.read_reg(apic::Register::Eoi);
             }
         }
-        log::debug!("Disabled IRQ {}", irq);
+        crate::log::debug_formatted("Disabled IRQ {}");
     }
 }
 
@@ -361,31 +361,26 @@ pub fn are_enabled() -> bool {
 
 /// Default exception handler
 fn default_exception_handler(vector: u8, frame: IrqFrame) {
-    log::error!("Unhandled exception {} at {:#016x}", vector, frame.rip);
-    log::error!("  CS:  {:#016x}", frame.cs);
-    log::error!("  RIP: {:#016x}", frame.rip);
-    log::error!("  RSP: {:#016x}", frame.rsp);
-    log::error!("  RFL: {:#016x}", frame.rflags);
+    crate::log::error_formatted("Unhandled exception {} at {:#016x}");
+    crate::log::error_formatted("  CS:  {:#016x}");
+    crate::log::error_formatted("  RIP: {:#016x}");
+    crate::log::error_formatted("  RSP: {:#016x}");
+    crate::log::error_formatted("  RFL: {:#016x}");
 }
 
 /// Default exception handler with error code
 fn default_exception_handler_with_error(vector: u8, frame: IrqFrame, error: u64) {
-    log::error!(
-        "Unhandled exception {} at {:#016x}, error: {:#016x}",
-        vector,
-        frame.rip,
-        error
-    );
-    log::error!("  CS:  {:#016x}", frame.cs);
-    log::error!("  RIP: {:#016x}", frame.rip);
-    log::error!("  RSP: {:#016x}", frame.rsp);
-    log::error!("  ERR: {:#016x}", error);
+    crate::log::error_formatted("Unhandled exception at address");
+    crate::log::error_formatted("  CS:  {:#016x}");
+    crate::log::error_formatted("  RIP: {:#016x}");
+    crate::log::error_formatted("  RSP: {:#016x}");
+    crate::log::error_formatted("  ERR: {:#016x}");
 }
 
 /// Default IRQ handler
 fn default_irq_handler(vector: u8, frame: IrqFrame) {
     let irq = vector - IRQ_BASE;
-    log::warn!("Unhandled IRQ {} (vector {})", irq, vector);
+    crate::log::warn_formatted("Unhandled IRQ {} (vector {})");
 }
 
 /// Helper to convert function pointer types

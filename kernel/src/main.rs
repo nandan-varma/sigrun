@@ -1,12 +1,10 @@
 //! SIGRUN Microkernel - Main Entry Point
-//!
-//! This is the Rust entry point called from assembly boot code.
-//! It receives the BootParams from the bootloader and initializes
-//! all kernel subsystems.
 
 #![no_std]
-#![forbid(unsafe_op_in_unsafe_fn)]
-#![feature(lang_items, asm_const)]
+#![no_main]
+#![allow(unsafe_op_in_unsafe_fn)]
+
+extern crate alloc;
 
 mod arch;
 mod capability;
@@ -20,88 +18,104 @@ mod timer;
 
 use arch::BootParams;
 
-/// Main kernel entry point
-///
-/// This function is called from the boot assembly with a pointer
-/// to the BootParams structure in a register (typically rdi/x0).
+// Bump allocator backed by a static array - no init needed
+use core::alloc::{GlobalAlloc, Layout};
+use core::sync::atomic::{AtomicUsize, Ordering};
+
+const HEAP_SIZE: usize = 4 * 1024 * 1024;
+
+#[repr(align(4096))]
+struct StaticHeap([u8; HEAP_SIZE]);
+
+static HEAP_MEMORY: StaticHeap = StaticHeap([0; HEAP_SIZE]);
+static HEAP_NEXT: AtomicUsize = AtomicUsize::new(0);
+
+struct BumpAllocator;
+
+unsafe impl GlobalAlloc for BumpAllocator {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        let base = HEAP_MEMORY.0.as_ptr() as usize;
+        loop {
+            let current = HEAP_NEXT.load(Ordering::Relaxed);
+            let aligned = (current + layout.align() - 1) & !(layout.align() - 1);
+            let next = aligned + layout.size();
+            if next > HEAP_SIZE {
+                return core::ptr::null_mut();
+            }
+            match HEAP_NEXT.compare_exchange_weak(
+                current, next, Ordering::SeqCst, Ordering::Relaxed,
+            ) {
+                Ok(_) => return (base + aligned) as *mut u8,
+                Err(_) => continue,
+            }
+        }
+    }
+
+    unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {}
+}
+
+unsafe impl Sync for BumpAllocator {}
+
+#[global_allocator]
+static GLOBAL_ALLOC: BumpAllocator = BumpAllocator;
+
+/// Main kernel entry point called from boot assembly with BootParams in rdi.
 #[no_mangle]
 pub extern "C" fn kmain(boot_params: &BootParams) -> ! {
-    // Initialize early logging
     log::early_init();
 
-    log::info!("SIGRUN Microkernel v0.1");
-    log::info!("=======================\n");
+    log::info("SIGRUN Microkernel v0.1");
+    log::info("=======================");
 
-    // Validate boot parameters
     if !boot_params.validate() {
-        log::error!("Invalid boot parameters!");
+        log::error("Invalid boot parameters!");
         halt();
     }
 
-    log::info!("Boot parameters validated");
+    log::info("Boot parameters validated");
 
-    // Phase 1: Early memory initialization
-    log::info!("Initializing memory manager...");
+    log::info("Initializing memory manager...");
     let mut memory = memory::init(boot_params);
-    log::info!("Memory manager initialized");
+    log::info("Memory manager initialized");
 
-    // Phase 2: Early interrupt setup
-    log::info!("Setting up interrupt handling...");
+    log::info("Setting up interrupt handling...");
     interrupt::early_init();
-    log::info!("Interrupt handling initialized");
+    log::info("Interrupt handling initialized");
 
-    // Phase 3: Timer initialization
-    log::info!("Initializing timer subsystem...");
+    log::info("Initializing timer subsystem...");
     timer::init();
-    log::info!("Timer subsystem initialized");
+    log::info("Timer subsystem initialized");
 
-    // Phase 4: Scheduler initialization
-    log::info!("Initializing scheduler...");
+    log::info("Initializing scheduler...");
     let sched = scheduler::init();
-    log::info!("Scheduler initialized");
+    log::info("Scheduler initialized");
 
-    // Phase 5: Capability system initialization
-    log::info!("Initializing capability manager...");
+    log::info("Initializing capability manager...");
     let caps = capability::init();
-    log::info!("Capability manager initialized");
+    log::info("Capability manager initialized");
 
-    // Phase 6: IPC subsystem initialization
-    log::info!("Initializing IPC subsystem...");
+    log::info("Initializing IPC subsystem...");
     ipc::init();
-    log::info!("IPC subsystem initialized");
+    log::info("IPC subsystem initialized");
 
-    // Phase 7: Create initial process
-    log::info!("Creating initial userspace process...");
+    log::info("Creating initial userspace process...");
     let init_process = scheduler::create_init_process();
-    log::info!("Initial process created");
+    log::info("Initial process created");
 
-    // Phase 8: Start the scheduler (never returns)
-    log::info!("Starting scheduler...\n");
+    log::info("Starting scheduler...");
     scheduler::start();
 
-    // Should never reach here
     halt();
 }
 
-/// Halt the CPU
 fn halt() -> ! {
     loop {
         arch::halt();
     }
 }
 
-/// Kernel panic handler
 #[panic_handler]
-fn panic(info: &core::panic::PanicInfo) -> ! {
-    log::error(&format!("KERNEL PANIC: {}", info));
-    halt();
-}
-
-/// Rust runtime stubs
-#[lang = "eh_personality"]
-fn eh_personality() {}
-
-#[lang = "panic_unwind"]
-fn panic_unwind() -> ! {
+fn panic(_info: &core::panic::PanicInfo) -> ! {
+    log::error("KERNEL PANIC");
     halt();
 }

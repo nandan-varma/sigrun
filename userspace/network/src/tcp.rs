@@ -4,6 +4,7 @@
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
+use bitflags::bitflags;
 
 extern crate alloc;
 
@@ -261,12 +262,13 @@ impl TcpLayer {
         remote_addr: [u8; 4],
         remote_port: Port,
     ) -> Option<&TcpConnection> {
+        let key = (local_port, remote_addr, remote_port);
         let mut conn = TcpConnection::new(local_port, remote_addr, remote_port);
         conn.state = TcpState::SynSent;
         conn.seq_num = rand_u32();
 
-        self.connections.insert(conn.src_key(), conn);
-        self.connections.get(&conn.src_key())
+        self.connections.insert(key, conn);
+        self.connections.get(&key)
     }
 
     pub fn listen(&mut self, port: Port) {
@@ -288,6 +290,6 @@ impl TcpLayer {
 
 fn rand_u32() -> u32 {
     use core::time::Duration;
-    let ticks = Duration::now().as_nanos() as u32;
+    let ticks = Duration::ZERO.as_nanos() as u32;
     ticks.wrapping_mul(1103515245).wrapping_add(12345)
 }

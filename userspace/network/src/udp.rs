@@ -130,10 +130,10 @@ impl UdpSocket {
         Some(UdpDatagram::new(self.local_port, port, Vec::from(data)))
     }
 
-    pub fn recv_from(&mut self, data: &[u8]) -> Option<([u8; 4], u16, &[u8])> {
+    pub fn recv_from(&mut self, data: &[u8]) -> Option<(u16, u16, Vec<u8>)> {
         let datagram = UdpDatagram::parse(data)?;
 
-        Some(([0, 0, 0, 0], datagram.src_port(), &datagram.payload))
+        Some((datagram.src_port(), datagram.dst_port(), datagram.payload))
     }
 }
 

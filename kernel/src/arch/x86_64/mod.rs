@@ -1,6 +1,7 @@
 //! x86_64-specific code
 
 pub mod apic;
+pub mod boot;
 pub mod gdt;
 pub mod idt;
 pub mod paging;

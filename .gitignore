@@ -1,5 +1,7 @@
 # Build artifacts
 /target/
+/iso/
+/sigrun.iso
 
 # OS
 .DS_Store

@@ -185,10 +185,10 @@ pub unsafe fn load_gdt(gdtr: &Gdtr) {
 pub unsafe fn load_cs(selector: SegmentSelector) {
     core::arch::asm!(
         "push {sel}",
-        "lea {tmp}, [1f + rip]",
+        "lea {tmp}, [2f + rip]",
         "push {tmp}",
         "retfq",
-        "1:",
+        "2:",
         sel = in(reg) selector.0 as u64,
         tmp = lateout(reg) _,
         options(preserves_flags)
@@ -198,28 +198,28 @@ pub unsafe fn load_cs(selector: SegmentSelector) {
 /// Load stack segment register
 pub unsafe fn load_ss(selector: SegmentSelector) {
     core::arch::asm!(
-        "mov ss, {sel}",
-        sel = in(reg) selector.0,
-        options(nostack, preserves_flags)
+        "mov ss, ax",
+        in("ax") selector.0,
+        options(nomem, nostack, preserves_flags)
     );
 }
 
 /// Load data segment registers (DS, ES, FS, GS)
 pub unsafe fn load_data_segments(selector: SegmentSelector) {
     core::arch::asm!(
-        "mov ds, {sel}",
-        "mov es, {sel}",
-        sel = in(reg) selector.0,
-        options(nostack, preserves_flags)
+        "mov ds, ax",
+        "mov es, ax",
+        in("ax") selector.0,
+        options(nomem, nostack, preserves_flags)
     );
 }
 
 /// Load task register
 pub unsafe fn load_tss(selector: SegmentSelector) {
     core::arch::asm!(
-        "ltr {sel}",
-        sel = in(reg) selector.0,
-        options(nostack, preserves_flags)
+        "ltr ax",
+        in("ax") selector.0,
+        options(nomem, nostack, preserves_flags)
     );
 }
 

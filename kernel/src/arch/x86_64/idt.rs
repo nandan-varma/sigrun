@@ -1,7 +1,6 @@
 //! Interrupt Descriptor Table for x86_64
 
 use core::mem::size_of;
-use core::sync::atomic::{AtomicUsize, Ordering};
 
 #[repr(C, align(16))]
 pub struct Idt {
@@ -15,30 +14,33 @@ impl Idt {
         }
     }
 
-    pub fn set_handler(&mut self, vector: u8, handler: extern "C" fn(InterruptFrame)) {
-        let addr = handler as u64;
-        self.entries[vector as usize] = IdtEntry::new(addr, 0x08, 0x8E);
-    }
-
-    pub fn set_handler_with_error(
+    /// Register a handler that receives only the interrupt frame (no error code).
+    pub fn set_handler(
         &mut self,
         vector: u8,
-        handler: extern "C" fn(InterruptFrame, u64),
+        handler: extern "x86-interrupt" fn(InterruptFrame),
     ) {
         let addr = handler as u64;
         self.entries[vector as usize] = IdtEntry::new(addr, 0x08, 0x8E);
     }
 
-    pub unsafe fn set_handler_raw(&mut self, vector: u8, handler: unsafe extern "C" fn()) {
+    /// Register a handler for exceptions that push an error code.
+    pub fn set_handler_with_error(
+        &mut self,
+        vector: u8,
+        handler: extern "x86-interrupt" fn(InterruptFrame, u64),
+    ) {
         let addr = handler as u64;
         self.entries[vector as usize] = IdtEntry::new(addr, 0x08, 0x8E);
     }
 
-    pub fn set_interrupt_handler(&mut self, vector: u8, handler: unsafe extern "C" fn()) {
-        let addr = handler as u64;
+    /// Register a handler using a raw function address (for assembly stubs).
+    pub unsafe fn set_handler_raw(&mut self, vector: u8, addr: u64) {
         self.entries[vector as usize] = IdtEntry::new(addr, 0x08, 0x8E);
     }
 
+    /// Load this IDT into the CPU.  Requires a `'static` reference so the
+    /// IDT remains valid for the lifetime of the kernel.
     pub fn load(&'static self) {
         let idtr = Idtr::new(self);
         unsafe {
@@ -89,6 +91,7 @@ impl IdtEntry {
     }
 }
 
+/// The interrupt/exception frame the CPU pushes automatically.
 #[repr(C)]
 pub struct InterruptFrame {
     pub rip: u64,
@@ -111,8 +114,4 @@ impl Idtr {
             base: idt as *const _ as u64,
         }
     }
-}
-
-pub unsafe fn load_idt(idtr: &Idtr) {
-    core::arch::asm!("lidt [{}]", in(reg) idtr, options(readonly, nostack, preserves_flags));
 }

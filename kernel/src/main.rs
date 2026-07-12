@@ -3,6 +3,7 @@
 #![no_std]
 #![no_main]
 #![allow(unsafe_op_in_unsafe_fn)]
+#![feature(abi_x86_interrupt)]
 
 extern crate alloc;
 
@@ -27,14 +28,14 @@ const HEAP_SIZE: usize = 4 * 1024 * 1024;
 #[repr(align(4096))]
 struct StaticHeap([u8; HEAP_SIZE]);
 
-static HEAP_MEMORY: StaticHeap = StaticHeap([0; HEAP_SIZE]);
+static mut HEAP_MEMORY: StaticHeap = StaticHeap([0; HEAP_SIZE]);
 static HEAP_NEXT: AtomicUsize = AtomicUsize::new(0);
 
 struct BumpAllocator;
 
 unsafe impl GlobalAlloc for BumpAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let base = HEAP_MEMORY.0.as_ptr() as usize;
+        let base = unsafe { HEAP_MEMORY.0.as_ptr() } as usize;
         loop {
             let current = HEAP_NEXT.load(Ordering::Relaxed);
             let aligned = (current + layout.align() - 1) & !(layout.align() - 1);
@@ -58,6 +59,43 @@ unsafe impl Sync for BumpAllocator {}
 
 #[global_allocator]
 static GLOBAL_ALLOC: BumpAllocator = BumpAllocator;
+
+/// Entry point called by the multiboot2 boot assembly after entering 64-bit mode.
+///
+/// Builds a `BootParams` from the multiboot2 information structure and
+/// hands off to `kmain`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kmain_from_multiboot2(magic: u32, info_ptr: u64) -> ! {
+    use arch::x86_64::boot::MB2_BOOTLOADER_MAGIC;
+
+    log::early_init();
+
+    if magic != MB2_BOOTLOADER_MAGIC {
+        log::error("Bad multiboot2 magic – check bootloader");
+        halt();
+    }
+
+    extern "C" {
+        static __kernel_end: u8;
+    }
+    let kernel_end = core::ptr::addr_of!(__kernel_end) as u64;
+    let kernel_start: u64 = 0x10_0000; // 1 MB physical
+
+    let boot_params = BootParams {
+        magic: 0x5349_4752,
+        version: 1,
+        memory_map: info_ptr as *mut u8,
+        memory_map_size: 0,
+        memory_descriptor_size: 0,
+        kernel_phys_start: kernel_start,
+        kernel_virt_start: kernel_start,
+        kernel_size: kernel_end.saturating_sub(kernel_start),
+        rsdp_address: 0,
+        efi_system_table: 0,
+    };
+
+    kmain(&boot_params);
+}
 
 /// Main kernel entry point called from boot assembly with BootParams in rdi.
 #[no_mangle]

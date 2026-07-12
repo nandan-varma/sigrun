@@ -26,23 +26,18 @@ impl BootParams {
     }
 }
 
-/// Halt the CPU
+/// Halt the CPU until the next interrupt, then repeat.  Never returns.
 pub fn halt() -> ! {
-    #[cfg(target_arch = "x86_64")]
-    {
-        use core::arch::asm;
+    loop {
+        #[cfg(target_arch = "x86_64")]
         unsafe {
-            asm!("hlt", options(nomem, nostack));
+            core::arch::asm!("hlt", options(nomem, nostack));
+        }
+        #[cfg(not(target_arch = "x86_64"))]
+        unsafe {
+            core::arch::asm!("wfi", options(nomem, nostack));
         }
     }
-    #[cfg(not(target_arch = "x86_64"))]
-    {
-        use core::arch::asm;
-        unsafe {
-            asm!("wfi", options(nomem, nostack));
-        }
-    }
-    loop {}
 }
 
 /// Enable interrupts

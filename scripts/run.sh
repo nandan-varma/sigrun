@@ -1,108 +1,116 @@
 #!/usr/bin/env bash
 # Build and run SIGRUN in QEMU.
-# Usage: ./scripts/run.sh [--release] [--debug] [--test] [--memory MB] [--cpus N]
+# Usage: ./scripts/run.sh [--release] [--debug-build] [--gdb] [--test] [--gui] [--memory=SIZE] [--cpus=N]
+#
+# Boot method: GRUB2 BIOS multiboot2 ISO.
+# Note: qemu-system-x86_64 -kernel does not work for 64-bit ELF in QEMU 5+.
 
 set -eo pipefail
 
 cd "$(dirname "$0")/.."
 
-MODE="debug"
-DEBUG=false
+export PATH="/opt/homebrew/opt/rustup/bin:$PATH"
+
+MODE="release"
+GDB=false
 TEST_MODE=false
-MEMORY="512M"
-CPUS="2"
+GUI=false
+MEMORY="128M"
+CPUS="1"
+SKIP_BUILD=false
 
 for arg in "$@"; do
     case $arg in
-        --release|-r) MODE="release" ;;
-        --debug|-d)   DEBUG=true ;;
-        --test)       TEST_MODE=true ;;
-        --memory=*)   MEMORY="${arg#*=}" ;;
-        --cpus=*)     CPUS="${arg#*=}" ;;
+        --release|-r)   MODE="release" ;;
+        --debug-build)  MODE="debug" ;;
+        --gdb|-g)       GDB=true ;;
+        --test|-t)      TEST_MODE=true ;;
+        --gui)          GUI=true ;;
+        --no-build)     SKIP_BUILD=true ;;
+        --memory=*)     MEMORY="${arg#*=}" ;;
+        --cpus=*)       CPUS="${arg#*=}" ;;
         --help|-h)
-            echo "Usage: $0 [--release] [--debug] [--memory=SIZE] [--cpus=N]"
-            echo "  --release      Use release build"
-            echo "  --debug        Start with GDB server on :1234 (waits for connection)"
-            echo "  --test         Exit after 10s; fail if 'SIGRUN' not seen on serial"
-            echo "  --memory=SIZE  QEMU memory (default: 512M)"
-            echo "  --cpus=N       QEMU CPU count (default: 2)"
+            echo "Usage: $0 [OPTIONS]"
+            echo ""
+            echo "Options:"
+            echo "  --release          Release build (default)"
+            echo "  --debug-build      Debug build (slower, has debug symbols)"
+            echo "  --gdb, -g          Start GDB server on :1234 (QEMU pauses until GDB connects)"
+            echo "  --test, -t         Boot test: exit after 15s; fail if kernel does not print ready message"
+            echo "  --gui              Open a real QEMU window (default: headless, serial-only)"
+            echo "  --no-build         Skip build step; use existing sigrun.iso"
+            echo "  --memory=SIZE      QEMU RAM (default: 128M)"
+            echo "  --cpus=N           QEMU CPU count (default: 1)"
             exit 0
             ;;
-        *) echo "Unknown option: $arg"; exit 1 ;;
+        *) echo "error: unknown option: $arg" >&2; exit 1 ;;
     esac
 done
 
 # ── dependency checks ──────────────────────────────────────────────────────────
-if ! command -v qemu-system-x86_64 &>/dev/null; then
-    echo "error: qemu-system-x86_64 not found."
-    echo "  macOS: brew install qemu"
-    echo "  Linux: apt install qemu-system-x86"
-    exit 1
-fi
-
-# ── build ──────────────────────────────────────────────────────────────────────
-RELEASE_FLAG=""
-[ "$MODE" = "release" ] && RELEASE_FLAG="--release"
-
-echo "==> Building kernel ($MODE)..."
-cargo build -p kernel --target x86_64-unknown-none $RELEASE_FLAG
-
-KERNEL="target/x86_64-unknown-none/$MODE/kernel"
-if [ ! -f "$KERNEL" ]; then
-    echo "error: kernel binary not found at $KERNEL"
-    exit 1
-fi
-
-# ── OVMF detection ────────────────────────────────────────────────────────────
-OVMF_PATHS=(
-    "$(brew --prefix 2>/dev/null)/share/qemu/edk2-x86_64-code.fd"
-    "/usr/share/ovmf/x64/OVMF.fd"
-    "/usr/share/edk2/ovmf/OVMF_CODE.fd"
-    "/usr/share/edk2-ovmf/x64/OVMF.fd"
-)
-OVMF=""
-for p in "${OVMF_PATHS[@]}"; do
-    [ -f "$p" ] && OVMF="$p" && break
+for dep in qemu-system-x86_64 i686-elf-grub-mkrescue; do
+    if ! command -v "$dep" &>/dev/null; then
+        echo "error: $dep not found."
+        echo "  macOS: brew install qemu i686-elf-grub mtools xorriso"
+        exit 1
+    fi
 done
 
-# ── QEMU command ──────────────────────────────────────────────────────────────
+# ── build ──────────────────────────────────────────────────────────────────────
+if ! $SKIP_BUILD; then
+    BUILD_FLAG=""
+    [ "$MODE" = "debug" ] && BUILD_FLAG="--debug"
+    ./scripts/build.sh $BUILD_FLAG
+fi
+
+if [ ! -f sigrun.iso ]; then
+    echo "error: sigrun.iso not found. Run ./scripts/build.sh first."
+    exit 1
+fi
+
+# ── QEMU ───────────────────────────────────────────────────────────────────────
 QEMU_ARGS=(
     qemu-system-x86_64
-    -machine q35
+    -cdrom sigrun.iso
     -m "$MEMORY"
     -smp "$CPUS"
-    -kernel "$KERNEL"
     -serial stdio
-    -display none
     -no-reboot
 )
 
-if [ -n "$OVMF" ]; then
-    QEMU_ARGS+=(-bios "$OVMF")
+if $GUI; then
+    QEMU_ARGS+=(-name "SIGRUN")
+else
+    QEMU_ARGS+=(-display none)
 fi
 
-# Enable KVM on Linux if available
-if [ -w /dev/kvm ]; then
+if [ -w /dev/kvm ] 2>/dev/null; then
     QEMU_ARGS+=(-enable-kvm -cpu host)
 fi
 
-if $DEBUG; then
+if $GDB; then
     QEMU_ARGS+=(-s -S)
-    echo "==> GDB server listening on :1234 (QEMU paused until connected)"
-    echo "    gdb $KERNEL -ex 'target remote :1234'"
+    KERNEL_ELF="target/x86_64-unknown-none/$MODE/kernel"
+    echo "==> GDB server on :1234 (QEMU paused — waiting for GDB to connect)"
+    echo "    gdb $KERNEL_ELF -ex 'target remote :1234'"
+    echo ""
 fi
 
 if $TEST_MODE; then
-    echo "==> Running boot test (10s timeout)..."
-    timeout 10s "${QEMU_ARGS[@]}" 2>&1 | tee /tmp/sigrun-boot.log || true
-    if grep -q "SIGRUN" /tmp/sigrun-boot.log; then
-        echo "Boot test passed."
+    LOG=/tmp/sigrun-boot.log
+    echo "==> Boot test (15s timeout)..."
+    timeout 15s "${QEMU_ARGS[@]}" 2>&1 | tee "$LOG" || true
+    if grep -q "SIGRUN kernel running" "$LOG"; then
+        echo ""
+        echo "==> PASSED"
         exit 0
     else
-        echo "Boot test failed — 'SIGRUN' not found in serial output."
+        echo ""
+        echo "==> FAILED — 'SIGRUN kernel running' not found in serial output"
         exit 1
     fi
 fi
 
-echo "==> Launching QEMU... (Ctrl-A X to quit)"
+echo "==> Launching QEMU (Ctrl-C to quit)..."
+echo ""
 "${QEMU_ARGS[@]}"

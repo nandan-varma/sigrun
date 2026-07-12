@@ -228,20 +228,20 @@ impl Pic {
 
     unsafe fn outb(&self, port: u16, value: u8) {
         core::arch::asm!(
-            "outb {value}, {port}",
-            port = in(reg) port,
-            value = in(reg) value,
-            options(nostack, preserves_flags)
+            "out dx, al",
+            in("dx") port,
+            in("al") value,
+            options(nomem, nostack, preserves_flags)
         );
     }
 
     unsafe fn inb(&self, port: u16) -> u8 {
         let value: u8;
         core::arch::asm!(
-            "inb {port}, {value}",
-            port = in(reg) port,
-            value = out(reg) value,
-            options(nostack, preserves_flags)
+            "in al, dx",
+            in("dx") port,
+            out("al") value,
+            options(nomem, nostack, preserves_flags)
         );
         value
     }

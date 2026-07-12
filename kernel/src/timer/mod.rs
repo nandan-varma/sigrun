@@ -14,12 +14,24 @@ use core::sync::atomic::{AtomicU64, Ordering};
 static CURRENT_TIME_NS: AtomicU64 = AtomicU64::new(0);
 
 pub fn init() {
-    crate::log::info_formatted("  - Initializing timer subsystem");
+    crate::log::info("  Initializing timer subsystem");
     clock::init();
     wheel::init();
     hpet::init();
     lapic::init();
-    crate::log::info_formatted("  - Timer subsystem ready");
+    crate::log::info("  Timer subsystem ready");
+}
+
+/// Called from the LAPIC timer ISR (vector 32) after EOI.
+pub fn on_tick() {
+    advance_time_10ms();
+    wheel::check_expired(current_time());
+    crate::scheduler::tick();
+}
+
+/// Advance the kernel time counter by one 10 ms tick.
+pub fn advance_time_10ms() {
+    CURRENT_TIME_NS.fetch_add(10_000_000, core::sync::atomic::Ordering::Relaxed);
 }
 
 pub fn current_time() -> u64 {

@@ -35,16 +35,24 @@ pub fn writeln(s: &str) {
 
 #[inline(always)]
 unsafe fn x86_out8(port: u16, value: u8) {
-    unsafe {
-        core::arch::asm!("outb {0}, {1}", in(reg) value, in(reg) port, options(nomem, nostack));
-    }
+    // `out dx, al` — port in DX, byte value in AL.
+    core::arch::asm!(
+        "out dx, al",
+        in("dx") port,
+        in("al") value,
+        options(nomem, nostack, preserves_flags)
+    );
 }
 
 #[inline(always)]
 unsafe fn x86_in8(port: u16) -> u8 {
     let value: u8;
-    unsafe {
-        core::arch::asm!("inb {1}, {0}", out(reg) value, in(reg) port, options(nomem, nostack));
-    }
+    // `in al, dx` — read from port in DX into AL.
+    core::arch::asm!(
+        "in al, dx",
+        in("dx") port,
+        out("al") value,
+        options(nomem, nostack, preserves_flags)
+    );
     value
 }

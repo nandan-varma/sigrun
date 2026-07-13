@@ -316,6 +316,7 @@ pub fn register_process_global(pid: u64) -> Option<alloc::sync::Arc<spin::Mutex<
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::format;
 
     #[test]
     fn test_cap_rights() {

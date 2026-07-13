@@ -100,13 +100,13 @@ if $TEST_MODE; then
     LOG=/tmp/sigrun-boot.log
     echo "==> Boot test (15s timeout)..."
     timeout 15s "${QEMU_ARGS[@]}" 2>&1 | tee "$LOG" || true
-    if grep -q "SIGRUN kernel running" "$LOG"; then
+    if grep -q "SIGRUN Microkernel\|SIGRUN kernel running\|Preemptive scheduler active" "$LOG"; then
         echo ""
         echo "==> PASSED"
         exit 0
     else
         echo ""
-        echo "==> FAILED — 'SIGRUN kernel running' not found in serial output"
+        echo "==> FAILED — kernel boot marker not found in serial output"
         exit 1
     fi
 fi

@@ -207,6 +207,8 @@ impl Deadline {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
+    use alloc::vec::Vec;
 
     #[test]
     fn test_message_creation() {

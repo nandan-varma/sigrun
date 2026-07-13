@@ -15,11 +15,7 @@ impl Idt {
     }
 
     /// Register a handler that receives only the interrupt frame (no error code).
-    pub fn set_handler(
-        &mut self,
-        vector: u8,
-        handler: extern "x86-interrupt" fn(InterruptFrame),
-    ) {
+    pub fn set_handler(&mut self, vector: u8, handler: extern "x86-interrupt" fn(InterruptFrame)) {
         let addr = handler as u64;
         self.entries[vector as usize] = IdtEntry::new(addr, 0x08, 0x8E);
     }

@@ -6,6 +6,8 @@ pub mod gdt;
 pub mod idt;
 pub mod paging;
 pub mod serial;
+pub mod switch;
+pub mod syscall;
 
 /// Physical address type
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

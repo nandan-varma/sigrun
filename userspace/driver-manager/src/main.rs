@@ -6,7 +6,7 @@
 #![no_main]
 
 use core::panic::PanicInfo;
-use syscall_api::{SYSCALL_WRITE, SyscallArgs};
+use syscall_api::{SyscallArgs, SYSCALL_WRITE};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn _start() -> ! {

@@ -46,8 +46,7 @@ type IrqHandlerFn = fn(IrqFrame);
 
 /// Static IDT – must live for the entire life of the kernel.
 #[cfg(target_arch = "x86_64")]
-static mut KERNEL_IDT: crate::arch::x86_64::idt::Idt =
-    crate::arch::x86_64::idt::Idt::new();
+static mut KERNEL_IDT: crate::arch::x86_64::idt::Idt = crate::arch::x86_64::idt::Idt::new();
 
 static HANDLER_BITS: AtomicU64 = AtomicU64::new(0);
 
@@ -148,10 +147,11 @@ mod handlers {
         // Do not send EOI for spurious interrupts.
     }
 
-    /// Timer interrupt from the LAPIC (vector 32).
-    pub extern "x86-interrupt" fn timer(frame: InterruptFrame) {
-        crate::timer::on_tick();
+    /// LAPIC timer (vector 32). EOI is sent BEFORE on_tick() so the LAPIC can
+    /// schedule the next interrupt even if on_tick() performs a context switch.
+    pub extern "x86-interrupt" fn timer(_frame: InterruptFrame) {
         unsafe { crate::arch::x86_64::apic::LOCAL_APIC.eoi() };
+        crate::timer::on_tick();
     }
 }
 
@@ -167,23 +167,38 @@ pub fn early_init() {
         gdt::init();
 
         crate::log::info("  - IDT");
-        KERNEL_IDT.set_handler(exceptions::DIVISION_BY_ZERO,  handlers::divide_by_zero);
-        KERNEL_IDT.set_handler(exceptions::DEBUG,              handlers::debug);
+        KERNEL_IDT.set_handler(exceptions::DIVISION_BY_ZERO, handlers::divide_by_zero);
+        KERNEL_IDT.set_handler(exceptions::DEBUG, handlers::debug);
         KERNEL_IDT.set_handler(exceptions::NON_MASKABLE_INTERRUPT, handlers::nmi);
-        KERNEL_IDT.set_handler(exceptions::BREAKPOINT,         handlers::breakpoint);
-        KERNEL_IDT.set_handler(exceptions::OVERFLOW,           handlers::overflow);
+        KERNEL_IDT.set_handler(exceptions::BREAKPOINT, handlers::breakpoint);
+        KERNEL_IDT.set_handler(exceptions::OVERFLOW, handlers::overflow);
         KERNEL_IDT.set_handler(exceptions::BOUND_RANGE_EXCEEDED, handlers::bound_range);
-        KERNEL_IDT.set_handler(exceptions::INVALID_OPCODE,     handlers::invalid_opcode);
-        KERNEL_IDT.set_handler(exceptions::DEVICE_NOT_AVAILABLE, handlers::device_not_available);
+        KERNEL_IDT.set_handler(exceptions::INVALID_OPCODE, handlers::invalid_opcode);
+        KERNEL_IDT.set_handler(
+            exceptions::DEVICE_NOT_AVAILABLE,
+            handlers::device_not_available,
+        );
         KERNEL_IDT.set_handler_with_error(exceptions::DOUBLE_FAULT, handlers::double_fault);
         KERNEL_IDT.set_handler_with_error(exceptions::INVALID_TSS, handlers::invalid_tss);
-        KERNEL_IDT.set_handler_with_error(exceptions::SEGMENT_NOT_PRESENT, handlers::segment_not_present);
+        KERNEL_IDT.set_handler_with_error(
+            exceptions::SEGMENT_NOT_PRESENT,
+            handlers::segment_not_present,
+        );
         KERNEL_IDT.set_handler_with_error(exceptions::STACK_SEGMENT_FAULT, handlers::stack_segment);
-        KERNEL_IDT.set_handler_with_error(exceptions::GENERAL_PROTECTION_FAULT, handlers::general_protection);
+        KERNEL_IDT.set_handler_with_error(
+            exceptions::GENERAL_PROTECTION_FAULT,
+            handlers::general_protection,
+        );
         KERNEL_IDT.set_handler_with_error(exceptions::PAGE_FAULT, handlers::page_fault);
-        KERNEL_IDT.set_handler(exceptions::X87_FLOATING_POINT_EXCEPTION, handlers::x87_exception);
+        KERNEL_IDT.set_handler(
+            exceptions::X87_FLOATING_POINT_EXCEPTION,
+            handlers::x87_exception,
+        );
         KERNEL_IDT.set_handler_with_error(exceptions::ALIGNMENT_CHECK, handlers::alignment_check);
-        KERNEL_IDT.set_handler(exceptions::SIMD_FLOATING_POINT_EXCEPTION, handlers::simd_exception);
+        KERNEL_IDT.set_handler(
+            exceptions::SIMD_FLOATING_POINT_EXCEPTION,
+            handlers::simd_exception,
+        );
 
         // LAPIC timer (vector 32) and spurious (vector 255).
         KERNEL_IDT.set_handler(32, handlers::timer);

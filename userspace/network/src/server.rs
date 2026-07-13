@@ -7,12 +7,11 @@ use crate::ipv4::{IpProtocol, Ipv4Layer};
 use crate::socket::{SocketAddr, SocketTable};
 use crate::tcp::{TcpFlags, TcpLayer, TcpSegment};
 use crate::udp::{UdpDatagram, UdpLayer};
-use syscall_api::{SyscallArgs, syscall};
+use syscall_api::{syscall, SyscallArgs};
 
 fn println(msg: &str) {
     let bytes = msg.as_bytes();
-    let args =
-        SyscallArgs::new(4).with_3args(1, bytes.as_ptr() as u64, bytes.len() as u64);
+    let args = SyscallArgs::new(4).with_3args(1, bytes.as_ptr() as u64, bytes.len() as u64);
     unsafe {
         syscall(args).ok();
     }

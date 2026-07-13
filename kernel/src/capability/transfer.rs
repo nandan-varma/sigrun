@@ -249,7 +249,7 @@ pub fn revoke_capability(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::capability::CapabilityId;
+    use crate::capability::{CapRights, Capability, CapabilityId, ObjectType};
 
     fn make_cap(id: u64) -> Capability {
         Capability {

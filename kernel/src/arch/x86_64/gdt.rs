@@ -15,15 +15,19 @@ pub struct Gdt {
 }
 
 impl Gdt {
-    /// Create a new GDT with standard entries
+    /// Create a new GDT with standard entries.
+    ///
+    /// The user_data/user_code order (0x18/0x20) matches the STAR MSR layout
+    /// required for SYSRETQ: SS = STAR[63:48]+8 = 0x18 (user_data),
+    /// CS = STAR[63:48]+16 = 0x20 (user_code).
     pub const fn new() -> Self {
         Self {
             entries: [
                 GdtEntry::null(),        // 0x00: Null
-                GdtEntry::kernel_code(), // 0x08: Kernel code
-                GdtEntry::kernel_data(), // 0x10: Kernel data
-                GdtEntry::user_code(),   // 0x18: User code
-                GdtEntry::user_data(),   // 0x20: User data
+                GdtEntry::kernel_code(), // 0x08: Kernel code  (DPL=0)
+                GdtEntry::kernel_data(), // 0x10: Kernel data  (DPL=0)
+                GdtEntry::user_data(),   // 0x18: User data    (DPL=3) ← for SYSRET SS
+                GdtEntry::user_code(),   // 0x20: User code    (DPL=3) ← for SYSRET CS
                 GdtEntry::null(),        // 0x28: TSS (low)
                 GdtEntry::null(),        // 0x30: TSS (high)
             ],
@@ -156,19 +160,16 @@ impl Gdtr {
     }
 }
 
-/// Segment selectors
+/// Segment selectors (GDT byte offsets, with RPL in bits [1:0]).
 pub struct SegmentSelector(pub u16);
 
 impl SegmentSelector {
-    /// Kernel code segment selector
     pub const KERNEL_CODE: Self = Self(0x08);
-    /// Kernel data segment selector
     pub const KERNEL_DATA: Self = Self(0x10);
-    /// User code segment selector
-    pub const USER_CODE: Self = Self(0x18 | 3);
-    /// User data segment selector
-    pub const USER_DATA: Self = Self(0x20 | 3);
-    /// TSS segment selector
+    /// 0x18 | 3 = 0x1b – user data (DPL=3); also SYSRET SS target.
+    pub const USER_DATA: Self = Self(0x18 | 3);
+    /// 0x20 | 3 = 0x23 – user code (DPL=3); also SYSRET CS target.
+    pub const USER_CODE: Self = Self(0x20 | 3);
     pub const TSS: Self = Self(0x28);
 }
 
@@ -223,32 +224,37 @@ pub unsafe fn load_tss(selector: SegmentSelector) {
     );
 }
 
+// ── Static interrupt stack for ring-3 → ring-0 transitions ───────────────────
+const IST_STACK_SIZE: usize = 8192;
+#[repr(align(16))]
+struct IstStack([u8; IST_STACK_SIZE]);
+static mut IST_STACK_BUF: IstStack = IstStack([0; IST_STACK_SIZE]);
+
 // Static GDT and TSS
 static mut GDT: Gdt = Gdt::new();
 static mut TSS: Tss = Tss::new();
 static GDT_INITIALIZED: AtomicBool = AtomicBool::new(false);
 
-/// Initialize the GDT
-///
-/// Sets up the Global Descriptor Table with kernel and user segments,
-/// and configures the Task State Segment for interrupt handling.
+/// Set TSS.RSP0 to `stack_top` (called after allocating a real kernel stack).
+pub fn set_tss_rsp0(stack_top: u64) {
+    unsafe { TSS.set_rsp(0, stack_top) }
+}
+
+/// Initialize the GDT with kernel/user segments, load it, and configure TSS.
 pub fn init() {
     if GDT_INITIALIZED.load(core::sync::atomic::Ordering::Relaxed) {
         return;
     }
 
     unsafe {
-        // Set up TSS with kernel stack (would use actual stack in real impl)
-        TSS.set_rsp(0, 0xFFFF_FFFF_8000_0000);
-        TSS.set_ist(1, 0xFFFF_FFFF_8000_0000);
+        // Interrupt stack for ring-3→ring-0 CPU-pushed interrupt frames.
+        let ist_top = IST_STACK_BUF.0.as_ptr().add(IST_STACK_SIZE) as u64;
+        TSS.set_rsp(0, ist_top); // used by hardware on ring-3 interrupt
+        TSS.set_ist(1, ist_top); // IST1 – double fault
 
-        // Set TSS descriptor in GDT
         GDT.set_tss(&TSS);
-
-        // Load GDT
         GDT.load();
 
-        // Update segment registers
         load_cs(SegmentSelector::KERNEL_CODE);
         load_ss(SegmentSelector::KERNEL_DATA);
         load_data_segments(SegmentSelector::KERNEL_DATA);
@@ -256,4 +262,9 @@ pub fn init() {
     }
 
     GDT_INITIALIZED.store(true, core::sync::atomic::Ordering::Relaxed);
+}
+
+/// Return the top of the IST stack (for informational logging).
+pub fn ist_stack_top() -> u64 {
+    unsafe { IST_STACK_BUF.0.as_ptr().add(IST_STACK_SIZE) as u64 }
 }

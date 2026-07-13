@@ -26,17 +26,16 @@ impl BootParams {
     }
 }
 
-/// Halt the CPU until the next interrupt, then repeat.  Never returns.
-pub fn halt() -> ! {
-    loop {
-        #[cfg(target_arch = "x86_64")]
-        unsafe {
-            core::arch::asm!("hlt", options(nomem, nostack));
-        }
-        #[cfg(not(target_arch = "x86_64"))]
-        unsafe {
-            core::arch::asm!("wfi", options(nomem, nostack));
-        }
+/// Halt the CPU until the next interrupt fires, then return.
+/// Callers that want to spin-halt forever wrap this in `loop { halt() }`.
+pub fn halt() {
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        core::arch::asm!("hlt", options(nomem, nostack));
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    unsafe {
+        core::arch::asm!("wfi", options(nomem, nostack));
     }
 }
 

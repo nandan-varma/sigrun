@@ -17,7 +17,7 @@ pub mod vfs;
 use core::panic::PanicInfo;
 use immutable::ImmutableFs;
 use server::FsServer;
-use syscall_api::{SyscallArgs, SYSCALL_YIELD};
+use syscall_api::{SYSCALL_YIELD, SyscallArgs};
 use vfs::Vfs;
 
 #[unsafe(no_mangle)]

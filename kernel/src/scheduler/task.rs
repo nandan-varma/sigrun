@@ -1,6 +1,6 @@
-//! Task representation and management
-//!
-//! Provides Task, TaskContext, TaskId, TaskState, and related structures.
+//! Task representation and management.
+
+extern crate alloc;
 
 use core::sync::atomic::{AtomicU64, Ordering};
 
@@ -271,6 +271,17 @@ pub struct TaskStats {
     pub started_at: Option<u64>,
 }
 
+const KERNEL_STACK_SIZE: usize = 8192; // 8 KB per task
+
+/// Allocate a kernel stack from the global allocator and return the top address.
+fn alloc_kernel_stack() -> u64 {
+    use alloc::alloc::{alloc, Layout};
+    let layout = Layout::from_size_align(KERNEL_STACK_SIZE, 16).expect("stack layout");
+    let ptr = unsafe { alloc(layout) };
+    assert!(!ptr.is_null(), "kernel stack allocation failed");
+    (ptr as usize + KERNEL_STACK_SIZE) as u64
+}
+
 /// Task structure - represents a schedulable unit
 #[derive(Debug)]
 pub struct Task {
@@ -305,27 +316,23 @@ pub struct Task {
 }
 
 impl Task {
-    /// Create a new kernel task
+    /// Create a new kernel task with an allocated stack ready for context switching.
     pub fn new_kernel(entry: fn() -> !, priority: Priority) -> Self {
-        let id = TaskId::new();
-        let stack_size = 8192; // 8KB kernel stack
-
-        // In real implementation, allocate stack from kernel heap
-        // For now, use a placeholder address
-        let kernel_stack = 0xFFFF_8000_0000_0000 + (id.as_u64() * stack_size) + stack_size;
-
+        let stack_top = alloc_kernel_stack();
+        let kernel_stack =
+            unsafe { crate::arch::x86_64::switch::init_task_stack(stack_top, entry as u64) };
         Self {
-            id,
+            id: TaskId::new(),
             state: TaskState::Ready,
             priority,
             cpu: CpuId::default(),
             affinity: CpuAffinity::ANY,
-            time_slice: 10_000_000, // 10ms default
+            time_slice: 10_000_000,
             kernel_stack,
             user_stack: None,
             context: TaskContext::new(),
             rip: entry as u64,
-            address_space: 0, // Kernel address space
+            address_space: 0,
             wakeup_time: None,
             stats: TaskStats {
                 created_at: crate::timer::current_time(),
@@ -335,16 +342,19 @@ impl Task {
         }
     }
 
-    /// Create the idle task
+    /// Create the idle task with a real allocated kernel stack.
     pub fn new_idle() -> Self {
+        let stack_top = alloc_kernel_stack();
+        let kernel_stack =
+            unsafe { crate::arch::x86_64::switch::init_task_stack(stack_top, idle_loop as u64) };
         Self {
-            id: TaskId::from_u64(0),
+            id: TaskId::new(),
             state: TaskState::Ready,
             priority: Priority::IDLE,
             cpu: CpuId::default(),
             affinity: CpuAffinity::ANY,
-            time_slice: u64::MAX, // Idle task never times out
-            kernel_stack: 0,
+            time_slice: u64::MAX,
+            kernel_stack,
             user_stack: None,
             context: TaskContext::new(),
             rip: idle_loop as u64,
@@ -389,10 +399,11 @@ impl Task {
     }
 }
 
-/// Idle task loop (does nothing but halt)
+/// Idle task: halt until the next timer interrupt triggers a context switch.
 fn idle_loop() -> ! {
     loop {
-        crate::arch::halt();
+        crate::arch::enable_interrupts();
+        crate::arch::halt(); // hlt; returns after interrupt fires, then loops
     }
 }
 

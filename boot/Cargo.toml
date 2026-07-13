@@ -8,6 +8,7 @@ authors.workspace = true
 [[bin]]
 name = "bootloader"
 path = "src/main.rs"
+test = false
 
 [dependencies]
 uefi = { version = "0.36", features = ["alloc"] }

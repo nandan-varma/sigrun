@@ -11,7 +11,7 @@
 #![no_main]
 
 use core::panic::PanicInfo;
-use syscall_api::{SYSCALL_WRITE, SyscallArgs};
+use syscall_api::{SyscallArgs, SYSCALL_WRITE};
 
 const MAX_SERVICES: usize = 8;
 const MAX_NAME_LEN: usize = 32;

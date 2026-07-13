@@ -28,16 +28,17 @@ struct BumpAllocator {
 
 impl BumpAllocator {
     const fn new() -> Self {
-        Self { 
-            offset: AtomicUsize::new(0), 
-            size: 64 * 1024 
+        Self {
+            offset: AtomicUsize::new(0),
+            size: 64 * 1024,
         }
     }
 }
 
 unsafe impl GlobalAlloc for BumpAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let start = (self.offset.load(Ordering::Relaxed) + layout.align() - 1) & !(layout.align() - 1);
+        let start =
+            (self.offset.load(Ordering::Relaxed) + layout.align() - 1) & !(layout.align() - 1);
         let end = start + layout.size();
         if end > self.size {
             core::ptr::null_mut()
@@ -58,7 +59,7 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
 pub fn main() {
     println("SIGRUN Shell v0.1");
     println("Type 'help' for commands\n");
-    
+
     let mut shell = Shell::new();
     shell.run()
 }
@@ -80,31 +81,31 @@ impl Shell {
 
     fn run(&mut self) -> ! {
         let mut line = [0u8; 256];
-        
+
         loop {
             self.print_prompt();
-            
+
             let bytes_read = self.read_line(&mut line);
-            
+
             if bytes_read == 0 {
                 continue;
             }
-            
+
             let input = &line[..bytes_read];
-            
+
             if input == b"exit" || input == b"quit" {
                 println("Goodbye!");
                 loop {}
             }
-            
+
             self.execute_line(input);
         }
     }
 
     fn read_line(&self, buf: &mut [u8]) -> usize {
-        let args = SyscallArgs::new(SYSCALL_READ)
-            .with_3args(0, buf.as_mut_ptr() as u64, buf.len() as u64);
-        
+        let args =
+            SyscallArgs::new(SYSCALL_READ).with_3args(0, buf.as_mut_ptr() as u64, buf.len() as u64);
+
         unsafe {
             match syscall_api::syscall(args) {
                 Ok(n) => n as usize,
@@ -115,13 +116,13 @@ impl Shell {
 
     fn execute_line(&mut self, input: &[u8]) {
         let trimmed = trim_bytes(input);
-        
+
         if trimmed.is_empty() {
             return;
         }
-        
+
         let mut parser = Parser::new(trimmed);
-        
+
         match parser.parse() {
             Some((cmd, args)) => self.execute(cmd, &args),
             None => println("Parse error"),
@@ -195,9 +196,9 @@ impl Shell {
             self.current_dir_len = 1;
             return;
         }
-        
+
         let target = args[0];
-        
+
         if target == b".." {
             if self.current_dir_len > 1 {
                 for i in (0..self.current_dir_len).rev() {
@@ -234,9 +235,9 @@ impl Shell {
             println("Usage: cat <file>");
             return;
         }
-        
+
         let file = args[0];
-        
+
         if file == b"/welcome.txt" || file == b"welcome.txt" {
             println("Welcome to SIGRUN!");
             println("This is an immutable filesystem.");
@@ -282,16 +283,16 @@ impl Shell {
 
 fn print(s: &str) {
     let bytes = s.as_bytes();
-    let args = SyscallArgs::new(SYSCALL_WRITE)
-        .with_3args(1, bytes.as_ptr() as u64, bytes.len() as u64);
+    let args =
+        SyscallArgs::new(SYSCALL_WRITE).with_3args(1, bytes.as_ptr() as u64, bytes.len() as u64);
     unsafe {
         syscall_api::syscall(args).ok();
     }
 }
 
 fn print_bytes(bytes: &[u8]) {
-    let args = SyscallArgs::new(SYSCALL_WRITE)
-        .with_3args(1, bytes.as_ptr() as u64, bytes.len() as u64);
+    let args =
+        SyscallArgs::new(SYSCALL_WRITE).with_3args(1, bytes.as_ptr() as u64, bytes.len() as u64);
     unsafe {
         syscall_api::syscall(args).ok();
     }
@@ -305,20 +306,20 @@ fn println(s: &str) {
 fn trim_bytes(bytes: &[u8]) -> &[u8] {
     let mut start = 0;
     let mut end = bytes.len();
-    
+
     while start < end {
         match bytes[start] {
             b' ' | b'\t' | b'\n' | b'\r' => start += 1,
             _ => break,
         }
     }
-    
+
     while end > start {
         match bytes[end - 1] {
             b' ' | b'\t' | b'\n' | b'\r' => end -= 1,
             _ => break,
         }
     }
-    
+
     &bytes[start..end]
 }

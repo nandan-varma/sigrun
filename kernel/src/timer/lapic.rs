@@ -25,8 +25,7 @@ const DIVIDE_BY_16: u32 = 0x03;
 
 /// Ticks-per-10-ms measured during `calibrate`.  Stored so `on_irq` can
 /// accumulate elapsed nanoseconds without re-reading hardware.
-static TICKS_PER_10MS: core::sync::atomic::AtomicU32 =
-    core::sync::atomic::AtomicU32::new(0);
+static TICKS_PER_10MS: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
 
 // ── Port I/O helpers ──────────────────────────────────────────────────────────
 
@@ -136,4 +135,3 @@ pub fn stop() {
 pub fn ticks_per_10ms() -> u32 {
     TICKS_PER_10MS.load(core::sync::atomic::Ordering::Relaxed)
 }
-

@@ -50,10 +50,14 @@ impl PageTableMapper {
             let frame = self.allocate_table()?;
             let new_table = &mut *(frame.start.as_mut_ptr::<PageTable>());
             new_table.clear();
-            self.pml4.entries[pml4_idx].set(frame, PageTableFlags::PRESENT | PageTableFlags::WRITABLE);
+            self.pml4.entries[pml4_idx]
+                .set(frame, PageTableFlags::PRESENT | PageTableFlags::WRITABLE);
         }
 
-        Ok(&mut *(self.pml4.entries[pml4_idx].frame().start.as_mut_ptr::<PageTable>()))
+        Ok(&mut *(self.pml4.entries[pml4_idx]
+            .frame()
+            .start
+            .as_mut_ptr::<PageTable>()))
     }
 
     unsafe fn get_or_create_pd(
@@ -72,7 +76,10 @@ impl PageTableMapper {
             return Err(MemoryError::AlreadyMapped);
         }
 
-        Ok(&mut *(pdpt.entries[pdpt_idx].frame().start.as_mut_ptr::<PageTable>()))
+        Ok(&mut *(pdpt.entries[pdpt_idx]
+            .frame()
+            .start
+            .as_mut_ptr::<PageTable>()))
     }
 
     unsafe fn get_or_create_pt(

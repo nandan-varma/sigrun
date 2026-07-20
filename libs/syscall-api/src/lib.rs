@@ -26,6 +26,17 @@ pub type SyscallResult = Result<u64, SyscallError>;
 ///
 /// This is a low-level interface. Most code should use the
 /// typed wrappers in other modules.
+///
+/// # Safety
+///
+/// Traps directly into the kernel via the `syscall` instruction with
+/// caller-supplied register values. The caller must ensure `args.num`
+/// names a real syscall and that `args.arg0..arg5` are valid for
+/// whatever that syscall expects (e.g. any pointer/length pair must
+/// reference memory the caller actually owns) — the kernel handler on
+/// the other side is trusted to validate inputs, but an unsupported or
+/// malformed syscall number/argument combination is caller-defined
+/// behavior, not guaranteed to fail gracefully.
 #[inline]
 pub unsafe fn syscall(args: SyscallArgs) -> Result<u64, SyscallError> {
     let result: u64;

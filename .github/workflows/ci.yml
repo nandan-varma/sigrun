@@ -79,8 +79,17 @@ jobs:
           components: rust-src
           targets: x86_64-unknown-none
 
-      - name: Install QEMU
-        run: sudo apt-get install -y qemu-system-x86
+      # scripts/run.sh hard-requires a binary literally named
+      # i686-elf-grub-mkrescue (matching macOS's `brew install i686-elf-grub`
+      # naming). Ubuntu's grub-pc-bin ships plain `grub-mkrescue`, but it
+      # already targets i386-pc/BIOS (unlike some EFI-only grub variants),
+      # which is exactly what this multiboot2 boot path needs — so a symlink
+      # under the expected name is sufficient, no cross-grub build required.
+      - name: Install QEMU + GRUB
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-x86 grub-pc-bin grub-common xorriso mtools
+          sudo ln -sf "$(command -v grub-mkrescue)" /usr/local/bin/i686-elf-grub-mkrescue
 
       - name: Build kernel
         run: cargo build -p kernel --target x86_64-unknown-none

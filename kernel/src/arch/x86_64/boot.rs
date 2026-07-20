@@ -8,6 +8,10 @@ use core::arch::global_asm;
 /// Multiboot2 magic the bootloader places in EAX before calling _start.
 pub const MB2_BOOTLOADER_MAGIC: u32 = 0x36d76289;
 
+// This defines `_start`, which collides with the host C runtime's own
+// `_start` (from Scrt1.o) when linking a host-target test binary — bare
+// metal only.
+#[cfg(target_os = "none")]
 global_asm!(
     // ── Boot stack (64 KB, zero-initialised by multiboot2 loader) ─────────
     ".section .boot.stack, \"aw\", @nobits",

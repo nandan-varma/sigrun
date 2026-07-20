@@ -240,7 +240,7 @@ pub fn tick() {
     // Pointer to old task's saved RSP field (must outlive the lock).
     let old_rsp_ptr: *mut u64 = if current_idx == usize::MAX {
         // First switch from boot/exit context: discard old RSP.
-        unsafe { &raw mut BOOT_SAVED_RSP }
+        &raw mut BOOT_SAVED_RSP
     } else {
         match table.slots[current_idx].as_mut() {
             Some(t) => &mut t.kernel_stack,

@@ -97,8 +97,8 @@ pub fn handle_ipc_destroy(args: &SyscallArgs) -> SyscallResult {
 
 pub fn handle_ipc_send(args: &SyscallArgs, caller_pid: u64) -> SyscallResult {
     let channel_id = args.arg0;
-    let payload_ptr = args.arg1;
-    let payload_len = args.arg2;
+    let _payload_ptr = args.arg1;
+    let _payload_len = args.arg2;
     let flags = args.arg3 as u8;
 
     let channel = get_manager()
@@ -119,9 +119,9 @@ pub fn handle_ipc_send(args: &SyscallArgs, caller_pid: u64) -> SyscallResult {
 
 pub fn handle_ipc_recv(args: &SyscallArgs, caller_pid: u64) -> SyscallResult {
     let channel_id = args.arg0;
-    let buffer_ptr = args.arg1;
-    let buffer_len = args.arg2;
-    let timeout_ms = args.arg3;
+    let _buffer_ptr = args.arg1;
+    let _buffer_len = args.arg2;
+    let _timeout_ms = args.arg3;
 
     let channel = get_manager()
         .channels
@@ -138,10 +138,10 @@ pub fn handle_ipc_recv(args: &SyscallArgs, caller_pid: u64) -> SyscallResult {
 
 pub fn handle_ipc_call(args: &SyscallArgs, caller_pid: u64) -> SyscallResult {
     let channel_id = args.arg0;
-    let request_ptr = args.arg1;
-    let request_len = args.arg2;
-    let reply_ptr = args.arg3;
-    let reply_len = args.arg4;
+    let _request_ptr = args.arg1;
+    let _request_len = args.arg2;
+    let _reply_ptr = args.arg3;
+    let _reply_len = args.arg4;
 
     let channel = get_manager()
         .channels
@@ -159,7 +159,7 @@ pub fn handle_ipc_call(args: &SyscallArgs, caller_pid: u64) -> SyscallResult {
     Ok(response.header.size as u64)
 }
 
-pub fn handle_ipc_notify(args: &SyscallArgs, caller_pid: u64) -> SyscallResult {
+pub fn handle_ipc_notify(args: &SyscallArgs, _caller_pid: u64) -> SyscallResult {
     let notification_id = args.arg0;
     let bits = args.arg1;
 
@@ -171,7 +171,7 @@ pub fn handle_ipc_notify(args: &SyscallArgs, caller_pid: u64) -> SyscallResult {
     Ok(0)
 }
 
-pub fn handle_ipc_wait(args: &SyscallArgs, caller_pid: u64) -> SyscallResult {
+pub fn handle_ipc_wait(args: &SyscallArgs, _caller_pid: u64) -> SyscallResult {
     let notification_id = args.arg0;
     let mask = args.arg1;
 

@@ -178,7 +178,7 @@ impl BuddyAllocator {
             return Err(MemoryError::OutOfFrames);
         }
 
-        let block = unsafe { self.free_lists[actual_order].pop().unwrap() };
+        let block = self.free_lists[actual_order].pop().unwrap();
         let addr = PhysAddr::new(block as u64);
 
         while actual_order > order {

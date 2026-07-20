@@ -3,6 +3,7 @@
 //!
 //! All assembly uses Intel syntax (Rust's global_asm! default on x86_64).
 
+#[cfg(target_os = "none")]
 use core::arch::global_asm;
 
 /// Multiboot2 magic the bootloader places in EAX before calling _start.

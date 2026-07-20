@@ -26,7 +26,7 @@ impl Port {
     pub const DNS: Self = Self(53);
 }
 
-/// TCP flags
+// TCP flags
 bitflags::bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct TcpFlags: u8 {
@@ -248,6 +248,7 @@ impl TcpLayer {
         Some(segment)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn send(
         &mut self,
         src_port: Port,

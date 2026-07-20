@@ -4,6 +4,9 @@
 
 #![no_std]
 #![forbid(unsafe_op_in_unsafe_fn)]
+// This binary is not yet spawned as a real process (see userspace/README /
+// CLAUDE.md) — plenty of scaffolding here is written ahead of being wired up.
+#![allow(dead_code)]
 
 extern crate alloc;
 extern crate common;
@@ -94,7 +97,9 @@ impl Shell {
 
             if input == b"exit" || input == b"quit" {
                 println("Goodbye!");
-                loop {}
+                loop {
+                    core::hint::spin_loop();
+                }
             }
 
             self.execute_line(input);

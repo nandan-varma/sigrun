@@ -9,6 +9,9 @@
 
 #![no_std]
 #![no_main]
+// This binary is not yet spawned as a real process (see userspace/README /
+// CLAUDE.md) — plenty of scaffolding here is written ahead of being wired up.
+#![allow(dead_code)]
 
 use core::panic::PanicInfo;
 use syscall_api::{SyscallArgs, SYSCALL_WRITE};

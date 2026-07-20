@@ -5,6 +5,9 @@
 #![no_std]
 #![no_main]
 #![forbid(unsafe_op_in_unsafe_fn)]
+// This binary is not yet spawned as a real process (see userspace/README /
+// CLAUDE.md) — plenty of scaffolding here is written ahead of being wired up.
+#![allow(dead_code)]
 
 extern crate common;
 extern crate syscall_api;

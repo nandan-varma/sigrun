@@ -26,7 +26,7 @@ pub extern "C" fn rust_syscall_handler(frame: *mut SyscallFrame) -> u64 {
     let arg0 = frame.rdi;
     let arg1 = frame.rsi;
     let arg2 = frame.rdx;
-    let arg3 = frame.r10;
+    let _arg3 = frame.r10;
     let _arg4 = frame.r8;
     let _arg5 = frame.r9;
 

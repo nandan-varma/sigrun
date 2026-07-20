@@ -40,7 +40,7 @@ jobs:
         run: cargo check -p init -p driver-manager -p filesystem -p network -p shell
 
       - name: Unit tests (host target)
-        run: cargo test --workspace
+        run: cargo test --workspace -- --test-threads=1
 
       - name: Clippy (host target)
         run: cargo clippy --workspace -- -D warnings

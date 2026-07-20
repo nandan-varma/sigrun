@@ -39,8 +39,18 @@ jobs:
       - name: Check userspace
         run: cargo check -p init -p driver-manager -p filesystem -p network -p shell
 
+      # kernel is deliberately excluded here, matching scripts/test.sh: its
+      # scheduler/idle/context modules reach real hlt/register-switch inline
+      # asm from plain function calls (not gated behind the freestanding
+      # target), which segfaults when executed as an ordinary host process.
+      # CLAUDE.md's documented kernel test invocations only ever scope to
+      # specific known-safe modules (ipc::tests, timer::tests), not the
+      # full suite.
       - name: Unit tests (host target)
-        run: cargo test --workspace -- --test-threads=1
+        run: cargo test --workspace --exclude kernel
+
+      - name: Unit tests (kernel, known-safe modules)
+        run: "cargo test -p kernel -- capability:: ipc::channel:: ipc::endpoint:: ipc::message:: ipc::notification:: ipc::queue:: ipc::shared_memory::"
 
       - name: Clippy (host target)
         run: cargo clippy --workspace -- -D warnings

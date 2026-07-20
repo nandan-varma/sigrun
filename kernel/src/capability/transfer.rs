@@ -285,7 +285,8 @@ mod tests {
         assert!(table1.lock().lookup(source_slot).is_err());
 
         let table2 = registry.get_table(2).unwrap();
-        let transferred = table2.lock().lookup(result.target_slot).unwrap();
+        let table2_guard = table2.lock();
+        let transferred = table2_guard.lookup(result.target_slot).unwrap();
         assert_eq!(transferred.object_id, 100);
     }
 
@@ -302,10 +303,11 @@ mod tests {
         let result = transfer_capability(&registry, 1, source_slot, 2, TransferMode::Copy).unwrap();
 
         assert!(result.source_retains);
-        assert!(table1.lock().lookup(source_slot).is_some());
+        assert!(table1.lock().lookup(source_slot).is_ok());
 
         let table2 = registry.get_table(2).unwrap();
-        let copied = table2.lock().lookup(result.target_slot).unwrap();
+        let table2_guard = table2.lock();
+        let copied = table2_guard.lookup(result.target_slot).unwrap();
         assert_eq!(copied.object_id, 200);
     }
 

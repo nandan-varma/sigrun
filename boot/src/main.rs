@@ -6,6 +6,9 @@
 #![no_std]
 #![no_main]
 #![forbid(unsafe_op_in_unsafe_fn)]
+// Some paging/params helpers are written ahead of being called from the
+// kernel-handoff path that's still being built out.
+#![allow(dead_code)]
 
 extern crate alloc;
 
@@ -15,7 +18,6 @@ mod memory;
 mod paging;
 mod params;
 
-use alloc::string::String;
 use params::{BootParams, BOOTINFO_VERSION, SIGRUN_BOOTINFO_MAGIC};
 use uefi::allocator::Allocator;
 use uefi::prelude::*;
@@ -28,7 +30,7 @@ static ALLOCATOR: Allocator = Allocator;
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
     // Try to output error message, but don't panic in panic handler
-    let _ = uefi::system::with_stdout(|stdout| {
+    uefi::system::with_stdout(|stdout| {
         let _ = stdout.output_string(cstr16!("PANIC in bootloader\r\n"));
     });
     loop {}
@@ -145,8 +147,6 @@ fn boot_main() -> Result<(), BootError> {
 
         entry(&final_params);
     }
-
-    unreachable!()
 }
 
 fn create_boot_params(

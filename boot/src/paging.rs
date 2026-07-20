@@ -27,7 +27,7 @@ pub enum PagingError {
 /// Creates 4-level paging structure with:
 /// 1. Identity mapping for all usable memory (for early boot)
 /// 2. Higher-half mapping for kernel (if needed)
-pub fn setup_identity_paging(mem_info: &MemoryInfo) -> Result<(), PagingError> {
+pub fn setup_identity_paging(_mem_info: &MemoryInfo) -> Result<(), PagingError> {
     let pml4_phys = allocate_page_table()?;
     let pdpt_phys = allocate_page_table()?;
     let pd_phys = allocate_page_table()?;

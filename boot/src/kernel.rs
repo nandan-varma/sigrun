@@ -162,7 +162,7 @@ pub fn parse_elf_header(data: &[u8]) -> Result<ElfHeader, LoadError> {
 fn load_elf_segments(data: &[u8], header: &ElfHeader) -> Result<(u64, u64, u64, u64), LoadError> {
     let mut min_vaddr = u64::MAX;
     let mut max_vaddr = 0u64;
-    let first_phys_addr;
+
     let entry_point = header.entry;
 
     // First pass: determine memory requirements
@@ -197,7 +197,7 @@ fn load_elf_segments(data: &[u8], header: &ElfHeader) -> Result<(u64, u64, u64, 
     }
 
     // Allocate memory for kernel
-    let kernel_size = ((max_vaddr - min_vaddr + 4095) / 4096) * 4096;
+    let kernel_size = (max_vaddr - min_vaddr).div_ceil(4096) * 4096;
 
     let kernel_buffer = uefi::boot::allocate_pages(
         uefi::boot::AllocateType::AnyPages,
@@ -206,8 +206,8 @@ fn load_elf_segments(data: &[u8], header: &ElfHeader) -> Result<(u64, u64, u64, 
     )
     .map_err(|_| LoadError::AllocationFailed)?;
 
-    let kernel_ptr = kernel_buffer.as_ptr() as *mut u8;
-    first_phys_addr = kernel_ptr as u64;
+    let kernel_ptr = kernel_buffer.as_ptr();
+    let first_phys_addr = kernel_ptr as u64;
 
     // Clear the buffer
     unsafe {

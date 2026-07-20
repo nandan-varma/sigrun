@@ -23,9 +23,9 @@ impl Handle {
 pub struct FileHandle(Handle);
 
 impl FileHandle {
-    pub const STDIN: Self = Self(Handle(unsafe { NonZeroU64::new_unchecked(0) }));
-    pub const STDOUT: Self = Self(Handle(unsafe { NonZeroU64::new_unchecked(1) }));
-    pub const STDERR: Self = Self(Handle(unsafe { NonZeroU64::new_unchecked(2) }));
+    pub const STDIN: Self = Self(Handle(NonZeroU64::new(0).unwrap()));
+    pub const STDOUT: Self = Self(Handle(NonZeroU64::new(1).unwrap()));
+    pub const STDERR: Self = Self(Handle(NonZeroU64::new(2).unwrap()));
 
     pub const fn new(raw: NonZeroU64) -> Self {
         Self(Handle::new(raw))
@@ -40,7 +40,7 @@ impl FileHandle {
     }
 
     pub const fn is_std(self) -> bool {
-        matches!(self.0.raw(), 0 | 1 | 2)
+        matches!(self.0.raw(), 0..=2)
     }
 }
 

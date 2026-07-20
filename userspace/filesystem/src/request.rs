@@ -2,8 +2,6 @@
 //!
 //! Defines the protocol between clients and the filesystem server.
 
-use common::ipc::Message;
-
 pub const ENTRY_TYPE_FILE: u8 = 1;
 pub const ENTRY_TYPE_DIR: u8 = 2;
 pub const ENTRY_TYPE_SYMLINK: u8 = 3;

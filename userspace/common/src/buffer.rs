@@ -11,6 +11,15 @@ where
     tail: AtomicUsize,
 }
 
+impl<T, const N: usize> Default for RingBuffer<T, N>
+where
+    T: Copy,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T, const N: usize> RingBuffer<T, N>
 where
     T: Copy,
@@ -80,6 +89,12 @@ where
 pub struct ByteArray<const N: usize> {
     data: [u8; N],
     len: usize,
+}
+
+impl<const N: usize> Default for ByteArray<N> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<const N: usize> ByteArray<N> {

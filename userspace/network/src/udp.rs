@@ -102,6 +102,12 @@ pub struct UdpSocket {
     pub bound: bool,
 }
 
+impl Default for UdpSocket {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl UdpSocket {
     pub const fn new() -> Self {
         Self {
@@ -122,7 +128,7 @@ impl UdpSocket {
         self.remote_port = Some(port);
     }
 
-    pub fn send_to(&self, data: &[u8], addr: [u8; 4], port: u16) -> Option<UdpDatagram> {
+    pub fn send_to(&self, data: &[u8], _addr: [u8; 4], port: u16) -> Option<UdpDatagram> {
         if !self.bound {
             return None;
         }
@@ -141,6 +147,12 @@ impl UdpSocket {
 pub struct UdpLayer {
     sockets: alloc::collections::BTreeMap<u16, UdpSocket>,
     rx_callback: Option<fn(&UdpDatagram)>,
+}
+
+impl Default for UdpLayer {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl UdpLayer {
@@ -168,7 +180,7 @@ impl UdpLayer {
     pub fn send(
         &self,
         src_port: u16,
-        dst_addr: [u8; 4],
+        _dst_addr: [u8; 4],
         dst_port: u16,
         payload: Vec<u8>,
     ) -> UdpDatagram {

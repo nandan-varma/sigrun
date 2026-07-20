@@ -40,7 +40,7 @@ fn main() -> ! {
             print(" services\n");
 
             print("Starting services...\n\n");
-            if let Err(_) = manager.start_services(&manifest) {
+            if manager.start_services(&manifest).is_err() {
                 print("ERROR: Failed to start services\n");
             }
         }

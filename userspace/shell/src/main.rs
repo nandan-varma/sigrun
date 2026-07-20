@@ -11,7 +11,6 @@ extern crate syscall_api;
 
 pub mod interpreter;
 
-use alloc::string::ToString;
 use interpreter::Parser;
 use syscall_api::{SyscallArgs, SYSCALL_READ, SYSCALL_WRITE};
 
@@ -217,11 +216,9 @@ impl Shell {
             self.current_dir[..len].copy_from_slice(&target[..len]);
             self.current_dir_len = len;
         } else {
-            if self.current_dir[self.current_dir_len - 1] != b'/' {
-                if self.current_dir_len < 255 {
-                    self.current_dir[self.current_dir_len] = b'/';
-                    self.current_dir_len += 1;
-                }
+            if self.current_dir[self.current_dir_len - 1] != b'/' && self.current_dir_len < 255 {
+                self.current_dir[self.current_dir_len] = b'/';
+                self.current_dir_len += 1;
             }
             let len = target.len().min(255 - self.current_dir_len);
             self.current_dir[self.current_dir_len..self.current_dir_len + len]

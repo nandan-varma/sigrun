@@ -17,7 +17,6 @@ pub mod socket;
 pub mod tcp;
 pub mod udp;
 
-use alloc::vec::Vec;
 use core::alloc::{GlobalAlloc, Layout};
 use core::sync::atomic::{AtomicUsize, Ordering};
 use ethernet::{EthernetLayer, MacAddress};

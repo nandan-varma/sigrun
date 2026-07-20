@@ -4,7 +4,6 @@
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
-use bitflags::bitflags;
 
 extern crate alloc;
 
@@ -217,6 +216,12 @@ pub struct TcpLayer {
     rx_callback: Option<fn(&TcpSegment)>,
 }
 
+impl Default for TcpLayer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TcpLayer {
     pub const fn new() -> Self {
         Self {
@@ -233,8 +238,8 @@ impl TcpLayer {
     pub fn receive(&self, data: &[u8]) -> Option<TcpSegment> {
         let segment = TcpSegment::parse(data)?;
 
-        let src_port = Port::new(u16::from_be(segment.header.src_port));
-        let dst_port = Port::new(u16::from_be(segment.header.dst_port));
+        let _src_port = Port::new(u16::from_be(segment.header.src_port));
+        let _dst_port = Port::new(u16::from_be(segment.header.dst_port));
 
         if let Some(callback) = self.rx_callback {
             callback(&segment);
@@ -246,7 +251,7 @@ impl TcpLayer {
     pub fn send(
         &mut self,
         src_port: Port,
-        dst_addr: [u8; 4],
+        _dst_addr: [u8; 4],
         dst_port: Port,
         seq_num: u32,
         ack_num: u32,

@@ -32,7 +32,7 @@ impl FsServer {
             return build_error_response(FsErrorCode::InvalidPath);
         }
 
-        let req_type = match msg.payload.get(0) {
+        let req_type = match msg.payload.first() {
             Some(&0) => FsRequestType::Open,
             Some(&1) => FsRequestType::Read,
             Some(&2) => FsRequestType::Write,

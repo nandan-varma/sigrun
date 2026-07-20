@@ -2,11 +2,11 @@
 //!
 //! Handles network I/O and routes packets between layers.
 
-use crate::ethernet::{EtherType, EthernetFrame, EthernetLayer};
+use crate::ethernet::{EtherType, EthernetLayer};
 use crate::ipv4::{IpProtocol, Ipv4Layer};
 use crate::socket::{SocketAddr, SocketTable};
-use crate::tcp::{TcpFlags, TcpLayer, TcpSegment};
-use crate::udp::{UdpDatagram, UdpLayer};
+use crate::tcp::{TcpFlags, TcpLayer};
+use crate::udp::UdpLayer;
 use syscall_api::{syscall, SyscallArgs};
 
 fn println(msg: &str) {
@@ -85,8 +85,8 @@ impl NetServer {
 
     fn process_tcp(&mut self, data: &[u8]) {
         if let Some(segment) = self.tcp.receive(data) {
-            let src_port = u16::from_be(segment.header.src_port);
-            let dst_port = u16::from_be(segment.header.dst_port);
+            let _src_port = u16::from_be(segment.header.src_port);
+            let _dst_port = u16::from_be(segment.header.dst_port);
 
             let flags = segment.header.flags();
 
@@ -102,7 +102,7 @@ impl NetServer {
 
     fn process_udp(&mut self, data: &[u8]) {
         if let Some(datagram) = self.udp.receive(data) {
-            let src_port = datagram.src_port();
+            let _src_port = datagram.src_port();
             let dst_port = datagram.dst_port();
 
             if dst_port == 53 {

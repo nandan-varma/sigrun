@@ -168,6 +168,12 @@ pub struct SocketTable {
     next_id: usize,
 }
 
+impl Default for SocketTable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SocketTable {
     pub const fn new() -> Self {
         Self {

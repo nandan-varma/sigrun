@@ -15,6 +15,12 @@ struct DirEntrySimple {
     is_dir: bool,
 }
 
+impl Default for ImmutableFs {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ImmutableFs {
     pub const fn new() -> Self {
         let mut name = [0u8; 32];

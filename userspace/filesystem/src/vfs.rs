@@ -34,6 +34,12 @@ pub struct FileStat {
     pub is_file: bool,
 }
 
+impl Default for FileStat {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FileStat {
     pub const fn new() -> Self {
         Self {
@@ -70,6 +76,12 @@ pub trait FileSystem: Send {
 pub struct Vfs {
     next_handle: u64,
     has_fs: bool,
+}
+
+impl Default for Vfs {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Vfs {

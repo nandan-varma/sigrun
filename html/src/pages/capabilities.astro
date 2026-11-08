@@ -1,0 +1,238 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+---
+
+<BaseLayout title="Capabilities" description="SIGRUN's object-capability system: per-process tables, rights bitmasks, derivation that can only narrow, move/copy/loan transfer, and revocation.">
+  <p class="eyebrow">Subsystem 8 · capabilities</p>
+  <h1>Capabilities: unforgeable references with rights</h1>
+  <p class="lede">
+    This is the security model that gives the project its name. Instead of asking "is this process allowed to
+    do X?", SIGRUN asks "does this process hold a capability for X?" — a kernel-minted handle that carries its
+    own rights.
+  </p>
+
+  <h2>The model in three properties</h2>
+  <div class="pitch">
+    <div class="card">
+      <h3>Unforgeable</h3>
+      <p>
+        A capability is created only by the kernel (a fresh <code class="mono">CapabilityId</code> from an
+        atomic counter) and stored in a per-process table. User code can hold it and pass it — it cannot
+        manufacture one, because it has no way to allocate a slot the kernel didn't fill.
+      </p>
+    </div>
+    <div class="card">
+      <h3>Rights-carrying</h3>
+      <p>
+        The rights live <em>in</em> the capability, not in a table somewhere else. A read-only capability for a
+        frame and a read-write one for the same frame are different objects with different authority.
+      </p>
+    </div>
+    <div class="card">
+      <h3>Monotonically narrowing</h3>
+      <p>
+        Deriving a new capability can only <em>intersect</em> rights with the parent's. You can hand out less
+        authority than you have, never more — which is what makes confinement provable rather than policed.
+      </p>
+    </div>
+  </div>
+
+  <figure class="diagram">
+    <div class="diagram-scroll">
+      <svg viewBox="0 0 1000 580" role="img" aria-labelledby="cap-title cap-desc" xmlns="http://www.w3.org/2000/svg" style="width:100%">
+        <title id="cap-title">Capability lifecycle: mint, install, derive, transfer, revoke</title>
+        <desc id="cap-desc">A kernel object has a capability minted for it with a type, object id and rights; the capability is installed in a process's table at a slot; deriving narrows rights; transferring moves or copies it to another process's table; revocation removes it from the borrower. A global registry maps process ids to capability tables.</desc>
+        <rect width="1000" height="580" fill="#f5f5f5"/>
+        <defs>
+          <marker id="c-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/>
+          </marker>
+          <marker id="c-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/>
+          </marker>
+        </defs>
+
+        <rect x="360" y="30" width="220" height="54" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="470" y="54" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Kernel object</text>
+        <text x="470" y="71" fill="#4f5d75" font-size="8.5" font-family="'Geist Mono', monospace" text-anchor="middle">Frame · Endpoint · Device · Process</text>
+        <line x1="470" y1="84" x2="470" y2="114" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#c-arrow)"/>
+
+        <rect x="330" y="114" width="280" height="66" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1.4"/>
+        <text x="470" y="138" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Capability</text>
+        <text x="470" y="156" fill="#4f5d75" font-size="8.5" font-family="'Geist Mono', monospace" text-anchor="middle">&#123; id · object_type · object_id · rights &#125;</text>
+        <text x="470" y="171" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">CapRights: READ WRITE EXEC DELETE ADMIN GRANT</text>
+        <line x1="470" y1="180" x2="470" y2="210" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#c-arrow)"/>
+
+        <rect x="350" y="210" width="240" height="58" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="470" y="234" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Process A table</text>
+        <text x="470" y="252" fill="#4f5d75" font-size="8.5" font-family="'Geist Mono', monospace" text-anchor="middle">slot 3 → capability</text>
+        <line x1="470" y1="268" x2="470" y2="298" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#c-arrow)"/>
+
+        <rect x="320" y="298" width="300" height="64" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="470" y="322" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">derive(parent, new_rights)</text>
+        <text x="470" y="340" fill="#4f5d75" font-size="8.5" font-family="'Geist Mono', monospace" text-anchor="middle">requires GRANT · new_rights ⊆ parent.rights</text>
+        <text x="470" y="354" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">else: RightsViolation / CannotDeriveMoreRights</text>
+        <line x1="470" y1="362" x2="470" y2="392" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#c-arrow-accent)"/>
+
+        <rect x="350" y="392" width="240" height="58" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="470" y="416" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Process B table</text>
+        <text x="470" y="434" fill="#4f5d75" font-size="8.5" font-family="'Geist Mono', monospace" text-anchor="middle">Move · Copy · Loan</text>
+        <line x1="470" y1="450" x2="470" y2="480" stroke="#7a8399" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#c-arrow)"/>
+
+        <rect x="350" y="480" width="240" height="58" rx="6" fill="#f5f5f5" stroke="#7a8399" stroke-width="1.1"/>
+        <text x="470" y="504" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">revoke()</text>
+        <text x="470" y="522" fill="#4f5d75" font-size="8.5" font-family="'Geist Mono', monospace" text-anchor="middle">removed from borrower's table</text>
+
+        <rect x="60" y="250" width="210" height="110" rx="6" fill="#ececec" stroke="rgba(45,49,66,0.4)" stroke-width="1"/>
+        <text x="165" y="276" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">CapabilityRegistry</text>
+        <text x="165" y="295" fill="#4f5d75" font-size="8.5" font-family="'Geist Mono', monospace" text-anchor="middle">pid → Arc&lt;Mutex&lt;Table&gt;&gt;</text>
+        <text x="165" y="313" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">global · spin::Mutex&lt;Option&lt;…&gt;&gt;</text>
+        <text x="165" y="334" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">MAX_CAPABILITIES = 1024</text>
+        <path d="M 270,290 L 350,240" fill="none" stroke="#7a8399" stroke-width="1" stroke-dasharray="4,3"/>
+        <path d="M 270,320 L 350,420" fill="none" stroke="#7a8399" stroke-width="1" stroke-dasharray="4,3"/>
+      </svg>
+    </div>
+    <figcaption>
+      Mint → install → derive → transfer → revoke. The registry on the left is how the kernel finds a process's
+      table; the capability itself never contains a pointer to the object.
+    </figcaption>
+  </figure>
+
+  <h2>The table</h2>
+  <p>
+    Each process owns a <code class="mono">CapabilityTable</code> mapping <code class="mono">SlotId</code> to
+    capability, with a free-list so removed slots are reused. A slot is the userspace-visible handle —
+    like a file descriptor, except that the object behind it is typed and rights-bearing.
+  </p>
+<pre><code><span class="c">// capability/table.rs</span>
+pub struct CapabilityTable &#123;
+    slots: BTreeMap&lt;SlotId, Capability&gt;,
+    free_slots: Vec&lt;SlotId&gt;,        <span class="c">// reused on the next insert</span>
+    next_slot: u32,
+    owner: u64,
+&#125;
+pub fn derive(&amp;mut self, parent_slot: SlotId, new_rights: CapRights)
+    -&gt; Result&lt;SlotId, CapError&gt; &#123;
+    let parent = self.lookup(parent_slot)?;
+    if !parent.rights.contains(CapRights::GRANT) &#123;
+        return Err(CapError::RightsViolation);          <span class="c">// no delegation right</span>
+    &#125;
+    if !parent.rights.contains(new_rights) &#123;
+        return Err(CapError::CannotDeriveMoreRights);   <span class="c">// cannot amplify</span>
+    &#125;
+    self.insert(Capability &#123; id: CapabilityId::new(),
+        object_type: parent.object_type, object_id: parent.object_id,
+        rights: new_rights &#125;)                            <span class="c">// same object, fewer rights</span>
+&#125;</code></pre>
+  <p>
+    <code class="mono">check_rights(slot, required)</code> is the enforcement primitive; the
+    <code class="mono">AuthorizedOperation</code> trait turns it into typed checks —
+    <code class="mono">ReadOp::is_authorized(&amp;cap)</code>, <code class="mono">GrantOp</code>, and so on — so
+    call sites name the operation instead of assembling a bitmask.
+  </p>
+
+  <h2>Three ways to hand over authority</h2>
+  <table>
+    <tr><th>Mode</th><th>Source keeps it?</th><th>Meaning</th></tr>
+    <tr><td class="mono">Move</td><td><span class="badge dead">NO</span></td><td>Removed from the source table, inserted into the target — authority <em>transfers</em>. The safe default for passing a handle you're done with.</td></tr>
+    <tr><td class="mono">Copy</td><td><span class="badge work">YES</span></td><td>The capability is cloned; both tables now hold equal authority. Note both derive from the same object, so each can be narrowed independently.</td></tr>
+    <tr><td class="mono">Loan</td><td><span class="badge work">YES</span></td><td>A revocable grant: the borrower gets a capability, and the lender can <code class="mono">revoke_capability</code> later — the borrower's copy disappears.</td></tr>
+  </table>
+<pre><code><span class="c">// capability/transfer.rs — the three modes, abridged</span>
+TransferMode::Move =&gt; &#123;
+    let cap = source.remove(source_slot)?;
+    let target_slot = target.insert(cap)?;                 <span class="c">// authority leaves the source</span>
+&#125;
+TransferMode::Copy =&gt; &#123;
+    let cap = source.lookup(source_slot)?.clone();
+    let target_slot = target.insert(cap)?;                 <span class="c">// both retain it</span>
+&#125;
+TransferMode::Loan =&gt; &#123;
+    let loaned = Capability &#123; id: CapabilityId::new(), ..*original &#125;;  <span class="c">// revocable</span>
+    let target_slot = target.insert(loaned)?;
+&#125;</code></pre>
+  <div class="callout">
+    <span class="label">Capabilities ride inside IPC messages</span>
+    <code class="mono">Message::with_cap(id)</code> puts up to four capability ids inline, marks the message
+    <code class="mono">CAP_TRANSFER</code>, and <code class="mono">CapabilityMessage</code> pairs a 64-byte body
+    with a list of <code class="mono">(SlotId, TransferMode)</code>. That's the seL4 "grant" operation: you
+    don't send a pointer, you send the authority itself.
+  </div>
+
+  <div class="callout warn">
+    <span class="label">Honest gaps in the capability system</span>
+    Rights are checked at the API boundary, but the objects behind capabilities (frames, endpoints) don't yet
+    consult the table before being used — so this is a working data model, not yet an enforcement boundary.
+    <code class="mono">derive_capability()</code> at the top of <code class="mono">capability/mod.rs</code> is a
+    stub returning a hardcoded object. Revocation is shallow: it finds a capability for the same object in the
+    borrower's table, but there's no stored derivation tree, so it cannot walk a chain
+    (derive → derive → derive) — the classic hard part of capability systems.
+  </div>
+
+  <div class="qa">
+    <h2>Interview Q&amp;A: capabilities</h2>
+
+    <div class="qa-item">
+      <p class="qa-q"><span class="tag">CORE</span>Capabilities vs ACLs — what's the difference and what does each cost you?</p>
+      <div class="qa-a">
+        <p>
+          An ACL attaches a list of subjects to the object and checks it at access time; a capability attaches
+          the authority to the subject and needs no lookup. Capabilities make delegation natural (hand over the
+          token), make confinement provable (you can't use authority you weren't given), and make the fast path
+          cheap (one indexing operation). The cost is revocation — with no central list, "take away X's access"
+          means walking every holder, or using indirection. ACLs revoke trivially and delegate awkwardly. SIGRUN
+          chose capabilities, which is why revoke is the weakest part of the story.
+        </p>
+      </div>
+      <div class="qa-followup"><b>FOLLOW-UP</b> "How do real capability systems revoke?" — Three broad options: track a derivation tree so revocation walks descendants (expensive but precise); use indirection objects (revoke by swapping the object behind a handle); or use epochs/generations so stale capabilities fail a check. seL4 tracks a CDT (capability derivation tree).</div>
+    </div>
+
+    <div class="qa-item">
+      <p class="qa-q"><span class="tag">CORE</span>Why does <code class="mono">derive</code> require the GRANT right?</p>
+      <div class="qa-a">
+        <p>
+          To make delegation explicitly grantable. If any holder could derive, then a process that received a
+          read-only capability could produce more read-only capabilities and hand them out — authority would leak
+          by default. Requiring <code class="mono">GRANT</code> means the original owner decides whether this
+          holder may delegate, which is the difference between "you can read this" and "you can decide who else
+          reads this". It's a two-bit distinction that turns out to matter a lot.
+        </p>
+      </div>
+    </div>
+
+    <div class="qa-item">
+      <p class="qa-q"><span class="tag">GOTCHA</span>Why a <code class="mono">BTreeMap</code> of slots rather than a fixed array of 1024?</p>
+      <div class="qa-a">
+        <p>
+          Flexibility at low cost: most processes hold a handful of capabilities, so a sparse map avoids
+          reserving (and zeroing) 1024 entries per process, while still giving O(log n) lookup and — importantly —
+          a natural free-list so slot indices are recycled. The trade is that the index is not a dense
+          file-descriptor-like table, and iterating all capabilities is a tree walk. A production kernel would
+          likely split the difference: a small inline array for the first N slots, spilling to a map.
+        </p>
+      </div>
+    </div>
+
+    <div class="qa-item">
+      <p class="qa-q"><span class="tag">DESIGN</span>What would break first if this became a real security boundary?</p>
+      <div class="qa-a">
+        <p>
+          Enforcement at the object, not the table. Today a capability is a record in a table, and the code that
+          maps a frame or writes to an endpoint doesn't consult that record — so the permission is advisory.
+          The fix is that every object access goes through the capability (the endpoint *is* the capability, as
+          in seL4, rather than an id that points to one), plus a derivation tree for precise revocation and
+          reference counting so an object dies when its last capability does. Those are the three things I'd
+          build next.
+        </p>
+      </div>
+      <div class="qa-followup"><b>FOLLOW-UP</b> "Is there a reference-counting bug here?" — Potentially: <code class="mono">derive</code> mints a new id for the same object without recording the parent link, and there is no per-object capability refcount, so "last capability dropped ⇒ free the object" can't be derived from the current structures.</div>
+    </div>
+  </div>
+
+  <div class="backtop"><a href="#">↑ back to top</a></div>
+
+  <div class="pagenav">
+    <a href="/ipc"><span>Prev</span><b>← IPC</b></a>
+    <a class="next" href="/userspace"><span>Next</span><b>Userspace — servers &amp; libs, scaffold vs real →</b></a>
+  </div>
+</BaseLayout>

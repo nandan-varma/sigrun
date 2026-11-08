@@ -1,0 +1,340 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+---
+
+<BaseLayout title="Memory" description="SIGRUN memory subsystem: buddy frame allocator, 4-level paging, the Mapper trait, heaps, and the per-address-space region list.">
+  <p class="eyebrow">Subsystem 2 · memory</p>
+  <h1>Memory: buddy frames, 4-level paging, heaps</h1>
+  <p class="lede">
+    SIGRUN owns physical memory end-to-end: a <strong>buddy allocator</strong> hands out power-of-two-sized
+    frames, a 4-level <strong>page-table walker</strong> maps them into virtual address spaces, and a
+    <strong>bump heap</strong> serves <code class="mono">alloc</code> before the scheduler exists.
+  </p>
+
+  <div class="pitch">
+    <div class="card">
+      <h3>The three allocators</h3>
+      <ul>
+        <li><strong>Buddy</strong> (<code class="mono">memory/frame.rs</code>) — physical frames, power-of-two orders 0..20 (4&nbsp;KiB … 4&nbsp;GiB).</li>
+        <li><strong>Bump</strong> (<code class="mono">main.rs</code>) — the global <code class="mono">#[global_allocator]</code>, 4&nbsp;MiB static array, never frees.</li>
+        <li><strong>Slab</strong> (<code class="mono">memory/heap.rs</code>) — per-size caches 8…4096; compiled but not the live global allocator.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>The two address worlds</h3>
+      <ul>
+        <li>Physical: what <code class="mono">PhysAddr</code> means — real RAM/MMIO locations the frame allocator hands out.</li>
+        <li>Virtual: what processes see. SIGRUN models it as an <code class="mono">AddressSpace</code> (own PML4 + a 32-entry <code class="mono">RegionList</code>) and a <code class="mono">Mapper</code> that edits page tables.</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>1 · The buddy allocator</h2>
+  <p>
+    The buddy system keeps <strong>20 free lists</strong>, one per order. Order <em>n</em> holds blocks of
+    <code class="mono">4&nbsp;KiB × 2ⁿ</code>. To allocate a 4&nbsp;KiB page you walk <em>up</em> the orders
+    until a non-empty list is found, then <em>split</em> the block in half repeatedly, parking each freed
+    buddy on the right list. Freeing is the reverse: if a block's buddy (its mirror-image neighbour, found
+    with an XOR) is also free, the two coalesce back into the parent order.
+  </p>
+
+  <figure class="diagram">
+    <div class="diagram-scroll">
+      <svg viewBox="0 0 1000 340" role="img" aria-labelledby="buddy-title buddy-desc" xmlns="http://www.w3.org/2000/svg" style="width:100%">
+        <title id="buddy-title">Buddy allocator split and merge</title>
+        <desc id="buddy-desc">A 16-page block splits into two 8-page buddies; the left 8 splits again into two 4-page buddies; one 4-page block is returned to the caller and the others go on free lists, with dashed arrows showing the merge on free.</desc>
+        <rect width="1000" height="340" fill="#f5f5f5"/>
+        <defs>
+          <marker id="m-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/>
+          </marker>
+          <marker id="m-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/>
+          </marker>
+        </defs>
+
+        <!-- root -->
+        <rect x="430" y="40" width="140" height="52" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="500" y="64" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">16-page block</text>
+        <text x="500" y="81" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">free_lists[2] · order 2</text>
+
+        <!-- split arrows down to L and R -->
+        <path d="M 460,92 L 460,120 L 300,120 L 300,148" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m-arrow)"/>
+        <path d="M 540,92 L 540,120 L 700,120 L 700,148" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m-arrow)"/>
+
+        <!-- L -->
+        <rect x="220" y="148" width="160" height="52" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="300" y="172" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">8-page buddy</text>
+        <text x="300" y="189" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">order 1 — split again</text>
+
+        <!-- R -->
+        <rect x="620" y="148" width="160" height="52" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="700" y="172" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">8-page buddy</text>
+        <text x="700" y="189" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">→ free_lists[1]</text>
+
+        <!-- L splits down -->
+        <path d="M 260,200 L 260,228 L 150,228 L 150,256" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m-arrow)"/>
+        <path d="M 340,200 L 340,228 L 450,228 L 450,256" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m-arrow)"/>
+
+        <!-- LL allocated -->
+        <rect x="60" y="256" width="180" height="52" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1.4"/>
+        <text x="150" y="280" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">4 KiB page → caller</text>
+        <text x="150" y="297" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">order 0 · PhysFrame</text>
+
+        <!-- LR free -->
+        <rect x="360" y="256" width="180" height="52" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="450" y="280" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">4-page buddy</text>
+        <text x="450" y="297" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">→ free_lists[0]</text>
+
+        <!-- merge dashed lines -->
+        <path d="M 450,256 L 450,228 L 340,228 L 340,200" fill="none" stroke="#7a8399" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#m-arrow)"/>
+        <path d="M 700,148 L 700,120 L 540,120 L 540,92" fill="none" stroke="#7a8399" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#m-arrow)"/>
+        <rect x="470" y="133" width="56" height="13" rx="2" fill="#f5f5f5"/>
+        <text x="498" y="143" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">MERGE</text>
+      </svg>
+    </div>
+    <figcaption>
+      Solid = split on allocate; dashed = coalesce on free. Finding the buddy is one XOR:
+      <code class="mono">addr ^ (PAGE_SIZE << order)</code>.
+    </figcaption>
+  </figure>
+
+  <div class="card">
+    <h3>The alloc path in code</h3>
+<pre><code><span class="c">// frame.rs — walk up until a non-empty list, then split down</span>
+let mut actual_order = order;
+while actual_order &lt;= MAX_ORDER &amp;&amp; self.free_lists[actual_order].is_empty() &#123;
+    actual_order += 1;          <span class="c">// find the smallest order with a free block</span>
+&#125;
+let block = self.free_lists[actual_order].pop().unwrap();
+while actual_order &gt; order &#123;     <span class="c">// split: park each leftover buddy one order down</span>
+    actual_order -= 1;
+    let buddy_addr = addr.as_u64() + (PAGE_SIZE &lt;&lt; actual_order);
+    self.add_free_block(buddy_addr, actual_order);
+&#125;
+<span class="c">// deallocate: coalesce while the buddy (addr ^ block_size) is free</span>
+fn buddy_address(&amp;self, addr: PhysAddr, order: usize) -&gt; PhysAddr &#123;
+    PhysAddr::new(addr.as_u64() ^ (PAGE_SIZE &lt;&lt; order))
+&#125;</code></pre>
+  </div>
+
+  <h2>2 · 4-level paging and the Mapper</h2>
+  <p>
+    The virtual address splits into five fields: 9 bits per level (PML4 → PDPT → PD → PT) plus a 12-bit page
+    offset. Each table is exactly one 4&nbsp;KiB frame holding 512 entries. <code class="mono">Mapper::map</code>
+    walks down, lazily allocating &amp; zeroing any missing table from the frame allocator, then sets the leaf
+    entry and flushes the TLB with <code class="mono">invlpg</code>.
+  </p>
+
+  <figure class="diagram">
+    <div class="diagram-scroll">
+      <svg viewBox="0 0 1000 300" role="img" aria-labelledby="walk-title walk-desc" xmlns="http://www.w3.org/2000/svg" style="width:100%">
+        <title id="walk-title">Four-level page-table walk</title>
+        <desc id="walk-desc">A virtual address is split into four 9-bit indices that select entries in the PML4, PDPT, PD and PT tables, ending at a 4 KiB physical frame; the low 12 bits are the offset inside the frame.</desc>
+        <rect width="1000" height="300" fill="#f5f5f5"/>
+        <defs>
+          <marker id="w-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/>
+          </marker>
+        </defs>
+
+        <!-- virtual address box -->
+        <rect x="40" y="30" width="260" height="150" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="170" y="52" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Virtual address (64-bit)</text>
+        <text x="170" y="72" fill="#eb6c36" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">bits 47 ··································· 0</text>
+        <line x1="52" y1="86" x2="288" y2="86" stroke="rgba(45,49,66,0.25)" stroke-width="1"/>
+        <text x="170" y="104" fill="#4f5d75" font-size="11" font-family="'Geist Mono', monospace" text-anchor="middle">PM4 PDPT  PD  PT  OFFSET</text>
+        <text x="170" y="122" fill="#7a8399" font-size="8.5" font-family="'Geist Mono', monospace" text-anchor="middle">39–47 30–38 21–29 12–20  0–11</text>
+        <text x="170" y="146" fill="#2d3142" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">(9-bit index each → 512 entries)</text>
+        <text x="170" y="164" fill="#7a8399" font-size="8.5" font-family="'Geist Mono', monospace" text-anchor="middle">page_table_indices() in page_table.rs</text>
+
+        <line x1="300" y1="105" x2="360" y2="105" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#w-arrow)"/>
+
+        <!-- PML4 -->
+        <rect x="360" y="45" width="120" height="60" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="420" y="68" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">PML4</text>
+        <text x="420" y="86" fill="#4f5d75" font-size="8.5" font-family="'Geist Mono', monospace" text-anchor="middle">entry[k48] → PDPT</text>
+
+        <line x1="480" y1="75" x2="540" y2="75" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#w-arrow)"/>
+
+        <!-- PDPT -->
+        <rect x="540" y="45" width="120" height="60" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="600" y="68" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">PDPT</text>
+        <text x="600" y="86" fill="#4f5d75" font-size="8.5" font-family="'Geist Mono', monospace" text-anchor="middle">entry[k47] → PD</text>
+
+        <line x1="660" y1="75" x2="720" y2="75" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#w-arrow)"/>
+
+        <!-- PD -->
+        <rect x="720" y="45" width="120" height="60" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="780" y="68" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">PD</text>
+        <text x="780" y="86" fill="#4f5d75" font-size="8.5" font-family="'Geist Mono', monospace" text-anchor="middle">entry[k46] → PT</text>
+
+        <line x1="840" y1="75" x2="880" y2="75" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#w-arrow)"/>
+
+        <!-- PT -->
+        <rect x="880" y="45" width="100" height="60" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="930" y="68" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">PT</text>
+        <text x="930" y="86" fill="#4f5d75" font-size="8.5" font-family="'Geist Mono', monospace" text-anchor="middle">entry[k45]</text>
+
+        <!-- frame -->
+        <path d="M 930,105 L 930,220 L 500,220 L 500,196" fill="none" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#w-arrow)"/>
+        <rect x="390" y="196" width="220" height="60" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1.4"/>
+        <text x="500" y="220" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">4 KiB physical frame</text>
+        <text x="500" y="238" fill="#4f5d75" font-size="8.5" font-family="'Geist Mono', monospace" text-anchor="middle">offset bits select the byte inside</text>
+      </svg>
+    </div>
+    <figcaption>
+      The CPU does this walk in hardware on every memory access; SIGRUN mirrors it in software in
+      <code class="mono">PageTableMapper</code> so it can create, unmap, and flag pages.
+    </figcaption>
+  </figure>
+
+  <div class="card">
+    <h3>The map path in code</h3>
+<pre><code><span class="c">// mapper.rs — create-or-descend each level, then fill the leaf</span>
+fn map(&amp;mut self, virt, frame, flags) -&gt; Result&lt;(), MemoryError&gt; &#123;
+    let (pml4_idx, pdpt_idx, pd_idx, pt_idx) = page_table_indices(virt);
+    let pdpt = self.get_or_create_pdpt(pml4_idx)?;   <span class="c">// alloc + clear a frame if absent</span>
+    let pd   = self.get_or_create_pd(pdpt, pdpt_idx)?;
+    let pt   = self.get_or_create_pt(pd, pd_idx)?;
+    pt.entries[pt_idx].set(frame, flags | PRESENT);
+    flush_tlb(virt);                    <span class="c">// invlpg — not the whole TLB</span>
+    Ok(())
+&#125;
+<span class="c">// page_table.rs — the 9-bit field extractor</span>
+pub const PML4_SHIFT: u64 = 39;  pub const PDPT_SHIFT: u64 = 30;
+pub const PD_SHIFT: u64 = 21;    pub const PT_SHIFT: u64 = 12;
+fn page_table_indices(addr) -&gt; (usize, usize, usize, usize) &#123;
+    ((addr &gt;&gt; 39) &amp; 0o777, (addr &gt;&gt; 30) &amp; 0o777,
+     (addr &gt;&gt; 21) &amp; 0o777, (addr &gt;&gt; 12) &amp; 0o777)
+&#125;</code></pre>
+  </div>
+
+  <h2>3 · The heap: why <code class="mono">static mut</code> and atomic bump</h2>
+  <p>
+    Rust's <code class="mono">alloc</code> needs a global allocator at compile time, but the kernel has no
+    userspace memory manager yet — so SIGRUN declares a 4&nbsp;MiB array and bumps an atomic cursor through
+    it. Two details matter:
+  </p>
+<pre><code><span class="c">// main.rs — the global bump allocator</span>
+#[repr(align(4096))]
+struct StaticHeap([u8; HEAP_SIZE]);              <span class="c">// 4 MiB</span>
+static mut HEAP_MEMORY: StaticHeap = StaticHeap([0; HEAP_SIZE]);
+<span class="c">// 'static mut' is CRITICAL: it lands in .bss (zeroed, writable).</span>
+<span class="c">// A plain 'static' would go to .rodata and the kernel would fault on write.</span>
+
+unsafe impl GlobalAlloc for BumpAllocator &#123;
+    unsafe fn alloc(&amp;self, layout: Layout) -&gt; *mut u8 &#123;
+        loop &#123;                            <span class="c">// CAS loop: safe to share with the timer ISR</span>
+            let cur = HEAP_NEXT.load(Relaxed);
+            let aligned = (cur + layout.align() - 1) &amp; !(layout.align() - 1);
+            let next = aligned + layout.size();
+            if next &gt; HEAP_SIZE &#123; return null_mut(); &#125;
+            if HEAP_NEXT.compare_exchange_weak(cur, next, SeqCst, Relaxed).is_ok() &#123;
+                return (base + aligned) as *mut u8;
+            &#125;
+        &#125;
+    &#125;
+    unsafe fn dealloc(&amp;self, _ptr: *mut u8, _layout: Layout) &#123;&#125;  <span class="c">// never frees</span>
+&#125;</code></pre>
+  <div class="callout">
+    <span class="label">Why a CAS loop for a boot allocator?</span>
+    Allocation must be safe even while interrupts are enabled — a timer tick could run kernel code that
+    allocates. The atomic compare-exchange makes allocating lock-free; the cost is that freed memory is never
+    reused, and the 4&nbsp;MiB pool is a hard ceiling (OOM returns <code class="mono">null</code>). A future
+    step swaps in the slab allocator in <code class="mono">memory/heap.rs</code>, which already has
+    per-size-class caches.
+  </div>
+
+  <h2>4 · Address spaces and the demo's U/S hack</h2>
+  <p>
+    <code class="mono">AddressSpace</code> owns a PML4 frame + a 32-slot <code class="mono">RegionList</code>
+    (code/data/rodata/bss/stack/heap/vmalloc/mmap/…). Only the kernel space is really populated today. The
+    ring-3 demo needs user-accessible memory, and rather than build a per-process page table yet, the kernel
+    does the minimal thing — set the <strong>U/S bit</strong> on the boot page tables so ring 3 can touch all
+    of the first 4&nbsp;GiB:
+  </p>
+<pre><code><span class="c">// main.rs — enable_user_pages()</span>
+let pml4 = addr_of!(_boot_pml4) as *mut u64;
+let pdpt = addr_of!(_boot_pdpt) as *mut u64;
+*pml4 |= 0x4;                     <span class="c">// U/S bit on PML4[0]</span>
+for i in 0..4 &#123; *pdpt.add(i) |= 0x4; &#125;   <span class="c">// ... and all four 1 GiB entries</span>
+<span class="c">// reload CR3 to flush the TLB</span>
+asm!("mov &#123;tmp&#125;, cr3", "mov cr3, &#123;tmp&#125;", tmp = out(reg) _, ...);</code></pre>
+  <div class="callout warn">
+    <span class="label">Interview honesty</span>
+    This is explicitly a hack — everything in the first 4 GiB, including kernel code and the heap, becomes
+    user-accessible. A real kernel would map only the user regions with U/S, keep kernel mappings supervisor-only
+    (<code class="mono">SMEP</code>/<code class="mono">SMAP</code> are not even set), and validate syscall
+    pointers. If asked "how would you harden this?", that's the answer to give.
+  </div>
+
+  <div class="qa">
+    <h2>Interview Q&amp;A: memory</h2>
+
+    <div class="qa-item">
+      <p class="qa-q"><span class="tag">CORE</span>Why a buddy allocator?</p>
+      <div class="qa-a">
+        <p>
+          It gives power-of-two block sizes with cheap coalescing: freeing a block checks its buddy with one
+          XOR and merges recursively, which keeps large contiguous regions available — critical for page
+          tables and future big mappings. The cost is internal fragmentation (a 5&nbsp;KiB request rounds to
+          8&nbsp;KiB) and O(log n) splitting; a slab or a general-purpose allocator handles small common sizes
+          better, which is why a slab layer also exists.
+        </p>
+      </div>
+      <div class="qa-followup"><b>FOLLOW-UP</b> "What are the 20 orders in MAX_ORDER?" — orders 0..20 = 4 KiB, 8 KiB, …, 4 GiB; the boot region (1 MiB..256 MiB) is seeded into the lists at init by repeatedly taking the largest aligned block. Note the frame allocator currently seeds a fixed 0x100000–0x11000000 window rather than parsing the multiboot memory map fully — one of the known limitations.</div>
+    </div>
+
+    <div class="qa-item">
+      <p class="qa-q"><span class="tag">CORE</span>Walk me through mapping a page.</p>
+      <div class="qa-a">
+        <p>
+          Split the virtual address into four 9-bit indices. At each level, if the entry isn't present, allocate
+          a zeroed table frame from the buddy allocator and record it. When you reach the PT, set the entry to
+          <code class="mono">(frame | flags | PRESENT)</code> and invalidate that virtual address with
+          <code class="mono">invlpg</code> so the CPU doesn't reuse a stale TLB entry. Unmapping retraces the
+          path and clears the leaf; the tables themselves are intentionally not garbage-collected.
+        </p>
+      </div>
+      <div class="qa-followup"><b>FOLLOW-UP</b> "Why invlpg and not reload CR3?" — <code class="mono">flush_tlb</code> is lazy-correct: single-address invalidation is cheaper and doesn't evict other mappings. Reloading CR3 (<code class="mono">flush_tlb_all</code>) is only used when a whole table changes, e.g. the U/S hack.</div>
+    </div>
+
+    <div class="qa-item">
+      <p class="qa-q"><span class="tag">GOTCHA</span>Why is the heap a <code class="mono">static mut</code> array and what breaks if it's a plain <code class="mono">static</code>?</p>
+      <div class="qa-a">
+        <p>
+          Linker placement. <code class="mono">static mut</code> puts 4&nbsp;MiB of zeroed bytes in
+          <code class="mono">.bss</code> — writable memory the loader zeroes for free. A plain
+          <code class="mono">static</code> initializer would emit the array into <code class="mono">.rodata</code>
+          (immutable pages), and the first <code class="mono">alloc</code> would page-fault. The
+          <code class="mono">#[global_allocator]</code> also has to be <code class="mono">Sync</code> — SIGRUN
+          marks the bump allocator <code class="mono">unsafe impl Sync</code> because the CAS cursor is the
+          only shared state.
+        </p>
+      </div>
+      <div class="qa-followup"><b>FOLLOW-UP</b> "What happens when the 4 MiB pool is exhausted?" — <code class="mono">alloc</code> returns null, and kernel allocation sites that unwrap (like the 8&nbsp;KiB task stacks) panic via <code class="mono">expect</code>. The pool is generous for the current workload, but this is the first thing a bigger system would outgrow.</div>
+    </div>
+
+    <div class="qa-item">
+      <p class="qa-q"><span class="tag">DESIGN</span>Where does the U/S bit hack sit, and why is it not a real isolation story?</p>
+      <div class="qa-a">
+        <p>
+          <code class="mono">enable_user_pages()</code> in <code class="mono">main.rs</code> sets U/S on the
+          single boot PML4/PDPT — one address space shared by kernel and user. A real design keeps kernel
+          mappings supervisor-only, builds a <em>separate</em> address space per process
+          (<code class="mono">MemoryManager::alloc_address_space</code> already allocates a fresh PML4 for
+          this), switches CR3 on context switch, and validates every user pointer in syscalls. The pieces to
+          do it exist; wiring them into the scheduler/syscall path is future work.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="backtop"><a href="#">↑ back to top</a></div>
+
+  <div class="pagenav">
+    <a href="/boot"><span>Prev</span><b>← Boot</b></a>
+    <a class="next" href="/scheduler"><span>Next</span><b>Scheduler — preemption &amp; context switch →</b></a>
+  </div>
+</BaseLayout>

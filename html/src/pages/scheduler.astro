@@ -1,0 +1,257 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+---
+
+<BaseLayout title="Scheduler" description="SIGRUN scheduler: a 64-slot task table, timer-driven preemption every 10 ms, and a hand-written stack-based context switch.">
+  <p class="eyebrow">Subsystem 3 · scheduler</p>
+  <h1>Scheduler: preemption and the context switch</h1>
+  <p class="lede">
+    Every 10&nbsp;ms the LAPIC timer fires, and inside the interrupt handler the kernel decides whether the
+    next task should run. "Deciding" is trivial (round-robin); the real machinery is
+    <code class="mono">switch_context</code> — 90 lines of assembly that swaps stacks mid-interrupt.
+  </p>
+
+  <h2>What preempts what</h2>
+  <p>
+    SIGRUN's scheduler is <strong>preemptive and timer-driven</strong>: no task has to cooperate.
+    <code class="mono">tasks</code> live in a flat 64-slot <code class="mono">TaskTable</code> guarded by a
+    <code class="mono">spin::Mutex</code>. Each has its own 8&nbsp;KiB kernel stack, a
+    <code class="mono">Priority</code> (0 = highest … 255 = idle), and a state (ready / running / blocked /
+    sleeping / terminated). The timer ISR calls <code class="mono">scheduler::tick()</code>; that picks the
+    next ready, non-idle task and context-switches.
+  </p>
+
+  <figure class="diagram">
+    <div class="diagram-scroll">
+      <svg viewBox="0 0 1000 520" role="img" aria-labelledby="sched-title sched-desc" xmlns="http://www.w3.org/2000/svg" style="width:100%">
+        <title id="sched-title">Timer interrupt driving a context switch</title>
+        <desc id="sched-desc">Sequence: the LAPIC raises interrupt vector 32; the ISR sends EOI, calls the timer callback, then the scheduler locks the task table, selects the next task, saves task A's registers, loads task B's stack and returns into B.</desc>
+        <rect width="1000" height="520" fill="#f5f5f5"/>
+        <defs>
+          <marker id="s-call" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/>
+          </marker>
+          <marker id="s-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/>
+          </marker>
+          <marker id="s-open" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polyline points="0 0, 8 3, 0 6" fill="none" stroke="#4f5d75" stroke-width="1.2"/>
+          </marker>
+        </defs>
+
+        <!-- actors -->
+        <rect x="90" y="30" width="110" height="52" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="145" y="54" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">LAPIC timer</text>
+        <text x="145" y="71" fill="#4f5d75" font-size="8.5" font-family="'Geist Mono', monospace" text-anchor="middle">vector 32</text>
+        <rect x="285" y="30" width="110" height="52" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="340" y="54" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Timer ISR</text>
+        <text x="340" y="71" fill="#4f5d75" font-size="8.5" font-family="'Geist Mono', monospace" text-anchor="middle">extern x86-int</text>
+        <rect x="480" y="30" width="110" height="52" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="535" y="54" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Scheduler</text>
+        <text x="535" y="71" fill="#4f5d75" font-size="8.5" font-family="'Geist Mono', monospace" text-anchor="middle">tick()</text>
+        <rect x="675" y="30" width="110" height="52" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="730" y="54" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Task A</text>
+        <text x="730" y="71" fill="#4f5d75" font-size="8.5" font-family="'Geist Mono', monospace" text-anchor="middle">heartbeat</text>
+        <rect x="870" y="30" width="110" height="52" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="925" y="54" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Task B</text>
+        <text x="925" y="71" fill="#4f5d75" font-size="8.5" font-family="'Geist Mono', monospace" text-anchor="middle">counter</text>
+
+        <!-- lifelines -->
+        <g stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="3,3">
+          <line x1="145" y1="82" x2="145" y2="470"/>
+          <line x1="340" y1="82" x2="340" y2="470"/>
+          <line x1="535" y1="82" x2="535" y2="470"/>
+          <line x1="730" y1="82" x2="730" y2="470"/>
+          <line x1="925" y1="82" x2="925" y2="470"/>
+        </g>
+
+        <!-- activation bars -->
+        <rect x="336" y="110" width="8" height="130" fill="rgba(45,49,66,0.06)" stroke="#4f5d75" stroke-width="0.8"/>
+        <rect x="531" y="200" width="8" height="190" fill="rgba(45,49,66,0.06)" stroke="#4f5d75" stroke-width="0.8"/>
+        <rect x="726" y="340" width="8" height="34" fill="rgba(45,49,66,0.06)" stroke="#4f5d75" stroke-width="0.8"/>
+        <rect x="921" y="380" width="8" height="90" fill="rgba(45,49,66,0.06)" stroke="#4f5d75" stroke-width="0.8"/>
+
+        <!-- 1 IRQ -->
+        <line x1="145" y1="120" x2="332" y2="120" stroke="#4f5d75" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#s-open)"/>
+        <rect x="180" y="105" width="120" height="13" rx="2" fill="#f5f5f5"/>
+        <text x="240" y="114" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">IRQ 10 ms</text>
+
+        <!-- 2 EOI -->
+        <line x1="340" y1="160" x2="153" y2="160" stroke="#4f5d75" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#s-call)"/>
+        <rect x="190" y="145" width="60" height="13" rx="2" fill="#f5f5f5"/>
+        <text x="220" y="154" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">EOI</text>
+
+        <!-- 3 on_tick -->
+        <line x1="340" y1="210" x2="527" y2="210" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#s-call)"/>
+        <rect x="385" y="195" width="110" height="13" rx="2" fill="#f5f5f5"/>
+        <text x="440" y="204" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">on_tick()</text>
+
+        <!-- 4 start next -->
+        <line x1="340" y1="240" x2="527" y2="240" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#s-call)"/>
+        <rect x="385" y="225" width="110" height="13" rx="2" fill="#f5f5f5"/>
+        <text x="440" y="234" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">sched::tick()</text>
+
+        <!-- 5 self: next_ready -->
+        <path d="M 531,280 C 475,280 475,306 531,306" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#s-call)"/>
+        <rect x="300" y="276" width="168" height="13" rx="2" fill="#f5f5f5"/>
+        <text x="384" y="285" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">LOCK · NEXT_READY</text>
+
+        <!-- 6 save A -->
+        <line x1="535" y1="346" x2="722" y2="346" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#s-call)"/>
+        <rect x="545" y="331" width="150" height="13" rx="2" fill="#f5f5f5"/>
+        <text x="620" y="340" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">PUSH REGS · RSP</text>
+
+        <!-- 7 switch to B accent -->
+        <line x1="535" y1="386" x2="917" y2="386" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#s-accent)"/>
+        <rect x="600" y="371" width="170" height="13" rx="2" fill="#f5f5f5"/>
+        <text x="685" y="380" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">LOAD RSP · RET</text>
+      </svg>
+    </div>
+    <figcaption>
+      The interrupt arrives while the CPU is inside Task A's code. The whole switch — save, swap, restore —
+      happens inside the ISR's interrupt frame; the CPU never returns to Task A until its next turn.
+    </figcaption>
+  </figure>
+
+  <h2>The context switch, line by line</h2>
+<pre><code><span class="c">// arch/x86_64/switch.rs — switch_context(old_rsp, new_rsp)</span>
+global_asm!(
+    "switch_context:",
+    <span class="c">// Save what the callee is allowed to clobber... no — save what CALLER expects intact.</span>
+    "pushfq",                  <span class="c">// RFLAGS (IF etc.)</span>
+    "push r15", "push r14", "push r13", "push r12", "push rbp", "push rbx",
+    <span class="c">// Park this task's stack pointer:</span>
+    "mov qword ptr [rdi], rsp",   <span class="c">// *old_rsp = RSP   (rdi = &amp;Task::kernel_stack)</span>
+    <span class="c">// Adopt the next task's stack:</span>
+    "mov rsp, rsi",               <span class="c">// RSP = new_rsp   (rsi = next task's kernel_stack)</span>
+    <span class="c">// Unwind that task's saved frame — its regs, its flags, its future:</span>
+    "pop rbx", "pop rbp", "pop r12", "pop r13", "pop r14", "pop r15",
+    "popfq",
+    "ret",                        <span class="c">// pops the continuation address → returns INTO task B</span>
+);</code></pre>
+  <p>
+    Why those registers? x86-64's calling convention says <code class="mono">rbx</code>,
+    <code class="mono">rbp</code>, <code class="mono">r12</code>–<code class="mono">r15</code> are
+    callee-saved — a function must preserve them. A context switch is the ultimate "call", so those six
+    registers plus RFLAGS are the entire CPU state we must keep per task on the stack. Everything else
+    (scratch registers, RIP via the return address) rides along for free in the frame.
+  </p>
+
+  <h2>Bootstrapping a fresh stack</h2>
+  <p>
+    A new task has never executed, so its stack must look like a task that was just switched out. The kernel
+    fabricates that frame in <code class="mono">init_task_stack</code>: write the entry point where
+    <code class="mono">ret</code> will pop it, zero the saved registers, set RFLAGS=<code class="mono">0x202</code>
+    (interrupts on). The first context switch to a task "returns" into its entry function.
+  </p>
+
+  <div class="card">
+    <h3>tick(): lock, pick, drop the lock, switch</h3>
+<pre><code><span class="c">// scheduler/mod.rs — called from the timer ISR (interrupts already off)</span>
+pub fn tick() &#123;
+    TICK_COUNT.fetch_add(1, Ordering::Relaxed);
+    let mut table = TASK_TABLE.lock();
+    let next_idx = match table.next_ready() &#123; Some(i) =&gt; i, None =&gt; return &#125;;
+    if next_idx == current_idx &#123; return; &#125;        <span class="c">// nobody to switch to</span>
+    let next_rsp = table.slots[next_idx].as_ref().unwrap().kernel_stack;
+    let old_rsp_ptr: *mut u64 = if current_idx == usize::MAX &#123;
+        &amp;raw mut BOOT_SAVED_RSP        <span class="c">// first switch out of boot — throw away</span>
+    &#125; else &#123;
+        &amp;mut table.slots[current_idx].as_mut().unwrap().kernel_stack
+    &#125;;
+    CURRENT_TASK_IDX.store(next_idx, Ordering::SeqCst);
+    drop(table);                                  <span class="c">// MUST release the lock first</span>
+    unsafe &#123; switch_context(old_rsp_ptr, next_rsp) &#125;
+&#125;</code></pre>
+    <div class="callout warn">
+      <span class="label">The deadlock you must never hit</span>
+      <code class="mono">spin::Mutex</code> is <em>not reentrant</em>. Lock it twice in one call stack and the
+      second <code class="mono">lock()</code> spins forever. Two concrete rules follow: (1) never lock
+      TASK_TABLE twice in one path, (2) drop the lock <em>before</em> switching stacks — otherwise the mutex
+      stays locked by a task that isn't running, and the next task that needs it deadlocks while
+      <code class="mono">next_ready</code> can never return to release it.
+    </div>
+  </div>
+
+  <h2>Round-robin, priorities, and the MLFQ shape</h2>
+  <p>
+    The live scheduler is a <strong>flat 64-slot round robin</strong>:
+    <code class="mono">TaskTable::next_ready</code> scans circularly from the current slot, prefers non-idle
+    tasks, and falls back to idle. <code class="mono">Priority</code> (0 = realtime range, 128 = default,
+    255 = idle) mainly feeds the scan. There is also a <strong>32-level MLFQ runqueue</strong>
+    (<code class="mono">scheduler/runqueue.rs</code>) with per-priority queues, but the code that actually runs
+    is the task-table scan — the runqueue is present, tested, and ready to take over when priorities need
+    teeth. The idle task (<code class="mono">Priority::IDLE</code>) just does
+    <code class="mono">sti; hlt</code> in a loop.
+  </p>
+
+  <div class="qa">
+    <h2>Interview Q&amp;A: scheduler</h2>
+
+    <div class="qa-item">
+      <p class="qa-q"><span class="tag">CORE</span>Walk me through one preemption from the top.</p>
+      <div class="qa-a">
+        <p>
+          The LAPIC fires vector 32. The CPU pushes an interrupt frame (RIP/CS/RFLAGS/RSP/SS) and jumps to the
+          IDT entry — the <code class="mono">timer</code> handler, declared <code class="mono">extern
+          "x86-interrupt"</code> so the frame arrives as a typed argument. It sends EOI first (so the LAPIC can
+          fire again even if we switch contexts), then <code class="mono">timer::on_tick()</code> advances the
+          clock, then <code class="mono">scheduler::tick()</code> picks the next ready task, drops the table
+          lock, and calls <code class="mono">switch_context</code>. The asm saves the running task's
+          callee-saved registers and RSP into its <code class="mono">Task.kernel_stack</code>, loads the next
+          task's RSP, pops its frame, and <code class="mono">ret</code> — which returns into B's code with
+          interrupts still disabled until B's <code class="mono">popfq</code>/its own sti restores them.
+        </p>
+      </div>
+      <div class="qa-followup"><b>FOLLOW-UP</b> "Why is EOI sent before the work?" — because the context switch may never return to this handler invocation. If EOI came after, the LAPIC could be stuck masking subsequent interrupts for a task that is no longer running.</div>
+    </div>
+
+    <div class="qa-item">
+      <p class="qa-q"><span class="tag">GOTCHA</span>What exactly does <code class="mono">switch_context</code> save, and why those registers?</p>
+      <div class="qa-a">
+        <p>
+          The six callee-saved registers (<code class="mono">rbx, rbp, r12–r15</code>) plus RFLAGS, and the RSP
+          (stored via the out-pointer). RIP is not saved explicitly — it's the return address already on the
+          stack, and <code class="mono">ret</code> pops the next task's continuation. Volatile registers
+          (rax, rcx, rdx, rsi, rdi, r8–r11) don't survive a call anyway, so the ABI lets us ignore them. Real
+          context switches additionally save FPU/SSE state (XSAVE) and, for separate address spaces, CR3.
+        </p>
+      </div>
+      <div class="qa-followup"><b>FOLLOW-UP</b> "Where does the very first switch go?" — <code class="mono">BOOT_SAVED_RSP</code> is a write-once throwaway slot used when <code class="mono">CURRENT_TASK_IDX</code> is <code class="mono">usize::MAX</code> (boot, and after <code class="mono">sys_exit</code> → <code class="mono">switch_to_idle</code>).</div>
+    </div>
+
+    <div class="qa-item">
+      <p class="qa-q"><span class="tag">DESIGN</span>Why does the runloop scan a flat table instead of using the MLFQ queues?</p>
+      <div class="qa-a">
+        <p>
+          Incremental development: the flat table is correct and simple for the current three kernel tasks +
+          idle, and the MLFQ is a tested-but-orphaned upgrade path. The scan is O(64) worst case and keeps a
+          single lock, which is the right trade at this scale. When priorities become load-bearing (e.g.
+          driver threads vs interactive shell), the runqueue with its per-level arrays and boost logic is the
+          intended replacement — a clean answer is "I built the data structure first and kept the simpler
+          selector until the workloads needed it".
+        </p>
+      </div>
+    </div>
+
+    <div class="qa-item">
+      <p class="qa-q"><span class="tag">GOTCHA</span>What happens if a task never blocks — can it starve everything?</p>
+      <div class="qa-a">
+        <p>
+          No, because preemption is timer-driven, not cooperative — <code class="mono">counter_task</code> is a
+          pure tight loop and the timer still switches it out every 10&nbsp;ms. That's the point of the demo:
+          CPU-bound work is preempted by the hardware timer, the task table scan never needs the task to yield.
+          Voluntary yield exists too: <code class="mono">sys_sched_yield</code> simply calls the same
+          <code class="mono">tick()</code> path.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="backtop"><a href="#">↑ back to top</a></div>
+
+  <div class="pagenav">
+    <a href="/memory"><span>Prev</span><b>← Memory</b></a>
+    <a class="next" href="/timers"><span>Next</span><b>Timers — PIT-calibrated LAPIC &amp; wheel →</b></a>
+  </div>
+</BaseLayout>

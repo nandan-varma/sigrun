@@ -1,0 +1,275 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+---
+
+<BaseLayout title="IPC" description="SIGRUN inter-process communication: capability-guarded channel endpoints, lock-free SPSC message queues, bitmask notifications, and shared memory with derived rights.">
+  <p class="eyebrow">Subsystem 7 · ipc</p>
+  <h1>IPC: channels, messages, notifications, shared memory</h1>
+  <p class="lede">
+    A microkernel lives or dies by its IPC. SIGRUN gives you four primitives: synchronous
+    <strong>channels</strong> between two endpoints, small <strong>messages</strong> that can carry
+    capabilities, asynchronous <strong>notifications</strong> as a 256-bit signal set, and
+    <strong>shared memory</strong> for zero-copy bulk transfer.
+  </p>
+
+  <h2>A channel is two endpoints and two queues</h2>
+  <figure class="diagram">
+    <div class="diagram-scroll">
+      <svg viewBox="0 0 1000 300" role="img" aria-labelledby="ipc-title ipc-desc" xmlns="http://www.w3.org/2000/svg" style="width:100%">
+        <title id="ipc-title">Anatomy of an IPC channel</title>
+        <desc id="ipc-desc">Process A holds an endpoint capability; messages flow through a single-producer single-consumer queue to endpoint B held by process B, and a second queue carries messages back.</desc>
+        <rect width="1000" height="300" fill="#f5f5f5"/>
+        <defs>
+          <marker id="p-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/>
+          </marker>
+          <marker id="p-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/>
+          </marker>
+        </defs>
+
+        <rect x="40" y="90" width="140" height="70" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="110" y="118" fill="#2d3142" font-size="12.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Process A</text>
+        <text x="110" y="137" fill="#4f5d75" font-size="8.5" font-family="'Geist Mono', monospace" text-anchor="middle">cap slot 0</text>
+
+        <line x1="180" y1="125" x2="228" y2="125" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#p-arrow)"/>
+
+        <rect x="228" y="90" width="130" height="70" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="293" y="115" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Endpoint a</text>
+        <text x="293" y="132" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">SEND · RECV</text>
+        <text x="293" y="146" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">· GRANT</text>
+
+        <line x1="358" y1="125" x2="406" y2="125" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#p-arrow)"/>
+
+        <rect x="406" y="84" width="220" height="82" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1.4"/>
+        <text x="516" y="110" fill="#2d3142" font-size="12.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Channel</text>
+        <text x="516" y="128" fill="#4f5d75" font-size="8.5" font-family="'Geist Mono', monospace" text-anchor="middle">queue A→B · SPSC ring, 16 slots</text>
+        <text x="516" y="144" fill="#4f5d75" font-size="8.5" font-family="'Geist Mono', monospace" text-anchor="middle">queue B→A · SPSC ring, 16 slots</text>
+        <text x="516" y="159" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">ChannelId + flags</text>
+
+        <line x1="626" y1="125" x2="674" y2="125" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#p-arrow)"/>
+
+        <rect x="674" y="90" width="130" height="70" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="739" y="115" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Endpoint b</text>
+        <text x="739" y="132" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">SEND · RECV</text>
+        <text x="739" y="146" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">· GRANT</text>
+
+        <line x1="804" y1="125" x2="852" y2="125" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#p-arrow)"/>
+
+        <rect x="852" y="90" width="120" height="70" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="912" y="118" fill="#2d3142" font-size="12.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Process B</text>
+        <text x="912" y="137" fill="#4f5d75" font-size="8.5" font-family="'Geist Mono', monospace" text-anchor="middle">cap slot 1</text>
+
+        <path d="M 912,166 L 912,230 L 110,230 L 110,166" fill="none" stroke="#7a8399" stroke-width="1" stroke-dasharray="5,4" marker-end="url(#p-arrow)"/>
+        <rect x="440" y="222" width="140" height="13" rx="2" fill="#f5f5f5"/>
+        <text x="510" y="231" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">RETURN PATH B→A</text>
+      </svg>
+    </div>
+    <figcaption>
+      Full duplex from two one-way queues. Each endpoint carries rights, so "who may send on this channel" is
+      answered by the capability, not by a lookup in a global table.
+    </figcaption>
+  </figure>
+
+  <div class="card">
+    <h3>Why a lock-free SPSC ring, and how it works</h3>
+    <p>
+      Each endpoint has exactly one producer and one consumer — the two processes. That lets the queue be a
+      single-producer/single-consumer ring buffer with just two atomics and no lock: the producer advances
+      <code class="mono">tail</code> with a Release store, the consumer advances <code class="mono">head</code>,
+      and capacity is a power of two so wrapping is a bitmask.
+    </p>
+<pre><code><span class="c">// ipc/queue.rs — the entire synchronisation story is two atomics</span>
+pub fn try_push(&amp;self, msg: Message) -&gt; Result&lt;(), QueueError&gt; &#123;
+    let tail = self.tail.load(Relaxed);
+    let head = self.head.load(Acquire);
+    if tail - head &gt;= self.capacity as u64 &#123; return Err(QueueError::Full); &#125;
+    let index = (tail &amp; self.mask as u64) as usize;
+    unsafe &#123; (*self.buffer.add(index)).write(msg); &#125;
+    self.tail.store(tail + 1, Release);      <span class="c">// publish the write</span>
+    Ok(())
+&#125;
+pub fn try_pop(&amp;self) -&gt; Result&lt;Message, QueueError&gt; &#123;
+    let head = self.head.load(Relaxed);
+    let tail = self.tail.load(Acquire);      <span class="c">// see everything published before tail</span>
+    if head == tail &#123; return if self.is_closed.load(Acquire)
+        &#123; Err(QueueError::Closed) &#125; else &#123; Err(QueueError::Empty) &#125;; &#125;
+    let msg = unsafe &#123; (*self.buffer.add((head &amp; self.mask as u64) as usize)).assume_init_read() &#125;;
+    self.head.store(head + 1, Release);
+    Ok(msg)
+&#125;</code></pre>
+    <p>
+      The Acquire/Release pairing is the whole memory-ordering argument: the Release store to
+      <code class="mono">tail</code> makes the message bytes visible before the index, and the Acquire load
+      makes the consumer see them. No lock, no <code class="mono">SeqCst</code> needed for this pattern.
+    </p>
+  </div>
+
+  <h2>What a message carries</h2>
+  <figure class="diagram">
+    <div class="diagram-scroll">
+      <svg viewBox="0 0 1000 200" role="img" aria-labelledby="msg-title msg-desc" xmlns="http://www.w3.org/2000/svg" style="width:100%">
+        <title id="msg-title">Message layout</title>
+        <desc id="msg-desc">A message has a header with type, sender and flags, a 256-byte inline payload, and space for four inline capability identifiers.</desc>
+        <rect width="1000" height="200" fill="#f5f5f5"/>
+        <rect x="60" y="60" width="240" height="70" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="180" y="88" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">MessageHeader</text>
+        <text x="180" y="106" fill="#4f5d75" font-size="8.5" font-family="'Geist Mono', monospace" text-anchor="middle">type · flags · sender_pid</text>
+        <text x="180" y="120" fill="#4f5d75" font-size="8.5" font-family="'Geist Mono', monospace" text-anchor="middle">size · cap_count · priority</text>
+        <rect x="330" y="60" width="300" height="70" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="480" y="88" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">inline_payload</text>
+        <text x="480" y="106" fill="#4f5d75" font-size="8.5" font-family="'Geist Mono', monospace" text-anchor="middle">256 bytes · copied by value</text>
+        <text x="480" y="120" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">with_payload(&amp;data)</text>
+        <rect x="660" y="60" width="280" height="70" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1.4"/>
+        <text x="800" y="88" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">inline_caps [4]</text>
+        <text x="800" y="106" fill="#4f5d75" font-size="8.5" font-family="'Geist Mono', monospace" text-anchor="middle">capability ids, transferred with the message</text>
+        <text x="800" y="120" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">with_cap(id) · MAX_INLINE_CAPS = 4</text>
+      </svg>
+    </div>
+    <figcaption>
+      Small and by-value on purpose: kernel-mediated IPC costs a copy, so keep the common case small and use
+      shared memory for bulk. Capabilities travel inside the message — that's capability transfer.
+    </figcaption>
+  </figure>
+
+  <h2>Notifications: 256 bits of async signal</h2>
+  <p>
+    A channel is synchronous-ish (queued); a <strong>notification</strong> is "just tell me something
+    happened". Each notification is four <code class="mono">AtomicU64</code> slots = 256 independent bits.
+    Signalling ORs bits; waiting spins until any requested bit is set, then clears exactly those bits. It's the
+    classic seL4-style signal object, and it's what you'd bind a device IRQ or an async completion to.
+  </p>
+<pre><code><span class="c">// ipc/notification.rs</span>
+pub struct Notification &#123;
+    pub id: NotificationId,
+    pub process: ProcessId,
+    pub slots: [AtomicU64; 4],       <span class="c">// 4 × 64 = 256 signal bits</span>
+&#125;
+pub fn signal(&amp;self, bits: u64) &#123;
+    for (i, slot) in self.slots.iter().enumerate() &#123;
+        slot.fetch_or(bits.rotate_right(i as u32 * 64), Ordering::Release);
+    &#125;
+&#125;
+pub fn wait(&amp;self, mask: u64) -&gt; u64 &#123;
+    loop &#123;
+        let signaled = self.poll(mask);
+        if signaled != 0 &#123; self.clear(signaled); return signaled; &#125;
+        core::hint::spin_loop();      <span class="c">// a real kernel would park the task here</span>
+    &#125;
+&#125;</code></pre>
+  <div class="callout warn">
+    <span class="label">Honest gap</span>
+    <code class="mono">wait()</code> spins on the CPU. With a preemptive scheduler, the correct implementation
+    would mark the task <code class="mono">Blocked(Ipc)</code> and park it on a wait queue, letting the timer
+    schedule someone else — the <code class="mono">BlockReason::Ipc</code> variant already exists in the task
+    model. The spin also means the demo's notification is consumed by the same task that signalled it.
+  </div>
+
+  <h2>Shared memory: derive rights, share zero-copy</h2>
+<pre><code><span class="c">// ipc/shared_memory.rs — narrowing a capability, not editing a permission table</span>
+pub fn derive(&amp;self, rights: MemoryRights, mode: ShareMode) -&gt; Self &#123;
+    let new_rights = self.rights &amp; rights;   <span class="c">// intersection: can only NARROW</span>
+    self.inc_ref();
+    Self &#123; frames: self.frames.clone(), rights: new_rights, share_mode: mode, .. &#125;
+&#125;
+<span class="c">// share_to_process() refuses if the owner tries to grant rights it doesn't hold:</span>
+if !region.rights.contains(rights) &#123; return Err(ShmError::PermissionDenied); &#125;</code></pre>
+  <p>
+    <code class="mono">ShareMode</code> is <code class="mono">CopyOnWrite | ReadOnly | ReadWrite</code>, and the
+    refcount drives destruction: <code class="mono">unmap</code> decrements; at zero the region is dropped.
+    Rights can only be intersected down, never amplified — the single most important property of a capability
+    system, and it's four lines here.
+  </p>
+
+  <h2>Who owns it all</h2>
+  <p>
+    <code class="mono">IpcManager</code> (a <code class="mono">spin::Once</code>) holds a
+    <code class="mono">ChannelManager</code> (<code class="mono">RwLock&lt;BTreeMap&lt;ChannelId, Arc&lt;Mutex&lt;Channel&gt;&gt;&gt;&gt;</code>),
+    a <code class="mono">NotificationManager</code>, and a <code class="mono">SharedMemoryManager</code>.
+    <code class="mono">ipc_demo_task</code> exercises all three at boot: it creates a channel between two
+    synthetic PIDs, sends three <code class="mono">A→B</code> messages, signals and waits on a notification,
+    and builds a capability table. And <code class="mono">dispatch_ipc_syscall</code> maps the
+    <code class="mono">SYSCALL_IPC_*</code> numbers onto these managers for userspace.
+  </p>
+  <div class="callout warn">
+    <span class="label">What's scaffolded</span>
+    The syscall handlers currently <em>ignore</em> the user payload pointers
+    (<code class="mono">_payload_ptr</code>, <code class="mono">_buffer_ptr</code>) — they create/consume messages
+    with empty payloads. Shared-memory regions synthesize placeholder frames
+    (<code class="mono">0, 4096, 8192…</code>) instead of asking the frame allocator, so the "zero-copy" path
+    isn't wired to real pages yet. And no process owns a channel: endpoints carry a
+    <code class="mono">ProcessId</code> but nothing yet maps "process X" to a live task. All three are
+    integration work on a working data model.
+  </div>
+
+  <div class="qa">
+    <h2>Interview Q&amp;A: IPC</h2>
+
+    <div class="qa-item">
+      <p class="qa-q"><span class="tag">CORE</span>Why two queues per channel instead of one?</p>
+      <div class="qa-a">
+        <p>
+          Deadlock-free full duplex. With one queue, two processes sending simultaneously would contend, and a
+          process sending a request while another sends a reply on the same queue would interleave
+          nondeterministically. Two one-way queues make each direction an independent SPSC ring — which is also
+          what makes the lock-free implementation legal: exactly one producer and one consumer per queue. The
+          <code class="mono">call()</code> RPC operation (<code class="mono">send</code> then
+          <code class="mono">recv</code>) rides the two directions as a request/reply pair.
+        </p>
+      </div>
+    </div>
+
+    <div class="qa-item">
+      <p class="qa-q"><span class="tag">CORE</span>Channel vs notification vs shared memory — when do you use which?</p>
+      <div class="qa-a">
+        <p>
+          Channel: you need ordered messages with a reply — RPC to the filesystem or a driver. Notification: you
+          need a cheap "event happened" with no payload and no ordering — an interrupt completion or a
+          "buffer ready" flag, where 256 independent bits let one object serve many event sources. Shared
+          memory: the payload is large and the copy cost matters — a frame buffer or a network packet ring;
+          you set it up once, then both sides read/write pages directly. Real systems layer them: notify over a
+          channel, then hand a shared-memory handle across.
+        </p>
+      </div>
+      <div class="qa-followup"><b>FOLLOW-UP</b> "Why not always shared memory?" — Because it needs setup, lifetime management, and both sides bound to the same physical frames; and because shared writable memory is unsynchronised by construction — you still need IPC or atomics for ordering. Small control messages are cheaper as copies.</div>
+    </div>
+
+    <div class="qa-item">
+      <p class="qa-q"><span class="tag">GOTCHA</span>What prevents a process from sending on a channel it shouldn't?</p>
+      <div class="qa-a">
+        <p>
+          The endpoint's rights. <code class="mono">EndpointInfo</code> carries
+          <code class="mono">SEND</code>/<code class="mono">RECV</code>/<code class="mono">GRANT</code>, and
+          <code class="mono">send_from_a</code> checks <code class="mono">can_send()</code> first. But the
+          deeper answer — and the honest one — is that this is only half-built: an endpoint has a
+          <code class="mono">CapabilitySlot</code>, yet the channel manager keys by
+          <code class="mono">ChannelId</code>, so there's no syscall path today that says "give endpoint b to
+          process P by installing this capability in P's table". Connecting <code class="mono">CapabilityTable</code>
+          slots to endpoint handles is the missing piece that would make the check secure rather than advisory.
+        </p>
+      </div>
+    </div>
+
+    <div class="qa-item">
+      <p class="qa-q"><span class="tag">DESIGN</span>Why would you spin in <code class="mono">Notification::wait</code> when the kernel is preemptive?</p>
+      <div class="qa-a">
+        <p>
+          You wouldn't, in the end — and saying so is the right answer. <code class="mono">wait</code> is a
+          correct-but-naive busy-wait; the preemptive scheduler means the spinning task is eventually switched
+          out, so it doesn't hang the machine, but it burns its quantum. The proper design marks the task
+          <code class="mono">Blocked(BlockReason::Ipc)</code>, appends it to a per-notification wait queue, and
+          has <code class="mono">signal()</code> make it <code class="mono">Ready</code> — at which point the
+          spin disappears entirely. <code class="mono">WaitSet</code> (already present) is the structure that
+          would hold multi-object waits.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="backtop"><a href="#">↑ back to top</a></div>
+
+  <div class="pagenav">
+    <a href="/syscalls"><span>Prev</span><b>← Syscalls</b></a>
+    <a class="next" href="/capabilities"><span>Next</span><b>Capabilities — rights, derive, transfer →</b></a>
+  </div>
+</BaseLayout>

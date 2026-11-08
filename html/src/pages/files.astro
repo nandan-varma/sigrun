@@ -1,0 +1,176 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+
+// Every Rust file in the repo, one line each, grouped by subsystem.
+// Status: WORK = does something real at boot or in tests · SCAFF = shape only
+//          DEAD = compiled out / stub.
+const FILES = [
+  { group: "kernel/src · entry & core", rows: [
+    { f: "kernel/src/main.rs", n: 420, s: "WORK", d: "kmain init sequence, 4 MiB bump global allocator, ring-3 demo via iretq, kernel tasks (heartbeat/counter/ipc-demo), panic → halt" },
+    { f: "kernel/src/lib.rs", n: 13, s: "WORK", d: "Intentionally empty mod tree — avoids compiling the global_asm! _start twice (duplicate symbol)" },
+    { f: "kernel/src/build.rs", n: 11, s: "WORK", d: "Emits cargo:rerun-if-changed for linker.ld so a linker change rebuilds" },
+    { f: "kernel/src/error.rs", n: 29, s: "WORK", d: "KernelError enum (NotFound, PermissionDenied, OutOfMemory, IoError, …) used by subsystem errors" },
+    { f: "kernel/src/log.rs", n: 74, s: "WORK", d: "Logging to COM1 through core::fmt::Write — formatted output with zero heap allocation" },
+  ]},
+  { group: "kernel/src/arch · hardware abstraction", rows: [
+    { f: "arch/mod.rs", n: 100, s: "WORK", d: "BootParams (magic/version/map/kernel bounds/rsdp), halt(), enable/disable_interrupts(), CPUID helpers" },
+    { f: "arch/x86_64/mod.rs", n: 97, s: "WORK", d: "Module tree + PhysAddr/VirtAddr newtypes, PAGE_SIZE=4096, IRQ_BASE=32" },
+    { f: "arch/x86_64/boot.rs", n: 161, s: "WORK", d: "multiboot2 header, 64 KiB boot stack, 4×1 GiB identity map, PAE+LME+PG transition, far jump — all global_asm!" },
+    { f: "arch/x86_64/gdt.rs", n: 270, s: "WORK", d: "7-entry GDT (kernel/user selectors + TSS), IST1 double-fault stack, load_cs via retfq trick, GDT order matches STAR MSR" },
+    { f: "arch/x86_64/idt.rs", n: 113, s: "WORK", d: "256-entry IDT, set_handler / set_handler_with_error, 64-bit split offsets, lidt with 'static lifetime" },
+    { f: "arch/x86_64/apic.rs", n: 262, s: "WORK", d: "Local APIC MMIO driver (0xFEE00000): spurious reg, timer, EOI, IPI; I/O APIC; legacy PIC remap+mask" },
+    { f: "arch/x86_64/serial.rs", n: 58, s: "WORK", d: "COM1 (0x3F8) init at 115200 8N1, polled write with explicit in/out register constraints" },
+    { f: "arch/x86_64/syscall.rs", n: 176, s: "WORK", d: "SYSCALL/SYSRET: EFER/LSTAR/STAR/SFMASK MSRs, syscall_entry asm builds the 15-qword SyscallFrame on a dedicated stack" },
+    { f: "arch/x86_64/switch.rs", n: 128, s: "WORK", d: "switch_context asm (push rbx-r15+rflags, swap RSP, ret), init_task_stack, ring-3 IRETQ trampoline" },
+    { f: "arch/x86_64/paging.rs", n: 86, s: "WORK", d: "Dual definition of a 512-entry PageTable + entry helpers (the live one is memory/page_table.rs)" },
+  ]},
+  { group: "kernel/src/interrupt · exceptions & IRQs", rows: [
+    { f: "interrupt/mod.rs", n: 278, s: "WORK", d: "Static KERNEL_IDT; all exception handlers (log + halt, #PF reads CR2); timer ISR sends EOI BEFORE on_tick; spurious 255 returns without EOI; register_handler is a stub" },
+  ]},
+  { group: "kernel/src/memory", rows: [
+    { f: "memory/mod.rs", n: 242, s: "WORK", d: "AddressSpace (PML4 + RegionList + heap) and MemoryManager (frame pool, vmalloc bump, alloc_address_space)" },
+    { f: "memory/frame.rs", n: 374, s: "WORK", d: "Buddy allocator: 21 free lists (4 KiB→4 GiB), split-on-alloc, XOR buddy coalesce; FrameAllocator with reserved regions + stats" },
+    { f: "memory/page_table.rs", n: 270, s: "WORK", d: "PML4/PDPT/PD/PT structs, bitflags entry flags, page_table_indices, read/write_cr3, flush_tlb (invlpg)" },
+    { f: "memory/mapper.rs", n: 271, s: "WORK", d: "Mapper trait + PageTableMapper: create-or-descend each level, set leaf, invlpg; map/unmap/update_flags/query/translate" },
+    { f: "memory/heap.rs", n: 284, s: "WORK", d: "Atomic bump Heap + KernelHeap global-allocator wrapper + SlabAllocator/SlabCache (8…4096 byte classes, not the live allocator)" },
+    { f: "memory/region.rs", n: 244, s: "WORK", d: "MemoryRegion types, 32-slot RegionList with overlap checks, KERNEL_BASE/USER_BASE/VMALLOC/MMAP address landmarks" },
+    { f: "memory/error.rs", n: 61, s: "WORK", d: "MemoryError: OutOfFrames, AlreadyMapped, NotMapped, RegionOverlap, AddressSpaceFull, …" },
+  ]},
+  { group: "kernel/src/scheduler", rows: [
+    { f: "scheduler/mod.rs", n: 296, s: "WORK", d: "64-slot TaskTable under spin::Mutex, tick() from the timer ISR (lock → next_ready → drop lock → switch_context), enter_idle, compat stubs" },
+    { f: "scheduler/task.rs", n: 457, s: "WORK", d: "Task (id/state/priority/affinity/kernel_stack/time_slice/stats), TaskId/Priority(0-255)/TaskState, 8 KiB stack alloc, kernel & idle factories" },
+    { f: "scheduler/runqueue.rs", n: 155, s: "SCAFF", d: "32-level MLFQ runqueue (enqueue/dequeue/boost) — tested but the live scheduler is the flat table scan" },
+    { f: "scheduler/context.rs", n: 203, s: "SCAFF", d: "TaskContext save/restore abstraction — the real switch lives in arch/x86_64/switch.rs" },
+    { f: "scheduler/idle.rs", n: 222, s: "WORK", d: "Idle loop: check timer events, sti + hlt until the next interrupt" },
+    { f: "scheduler/affinity.rs", n: 115, s: "SCAFF", d: "CpuAffinity mask + CpuId — single-CPU today, prepared for SMP" },
+  ]},
+  { group: "kernel/src/timer", rows: [
+    { f: "timer/mod.rs", n: 123, s: "WORK", d: "CURRENT_TIME_NS atomic, on_tick() = +10 ms → wheel → scheduler::tick, sleep_ns/busy_wait_us" },
+    { f: "timer/lapic.rs", n: 137, s: "WORK", d: "PIT channel-2 one-shot calibration → ticks per 10 ms, periodic LVT (1<<17)|vector 32" },
+    { f: "timer/clock.rs", n: 131, s: "SCAFF", d: "ClockSource trait, SystemClock, Timestamp/Duration types — abstraction awaiting a real source" },
+    { f: "timer/wheel.rs", n: 186, s: "WORK", d: "4 wheels × 8 slots (1…512 ms granularity) + 8-slot overflow; schedule/cancel/check_expired" },
+    { f: "timer/hpet.rs", n: 60, s: "DEAD", d: "HPET driver shape: is_available()=false, read_counter()=0 — software simulation only" },
+  ]},
+  { group: "kernel/src/ipc", rows: [
+    { f: "ipc/mod.rs", n: 302, s: "WORK", d: "Public API (create/send/recv/call channel, notifications, shared memory), IpcError mapping, stats; kernel-internal helpers" },
+    { f: "ipc/channel.rs", n: 298, s: "WORK", d: "Channel = 2 endpoints + 2 SPSC queues (a→b, b→a); send_from_a/recv_at_b & friends; call() = send+recv RPC; ChannelManager under RwLock" },
+    { f: "ipc/endpoint.rs", n: 158, s: "WORK", d: "Endpoint (id/process/CapabilitySlot), EndpointRights SEND|RECV|GRANT, EndpointInfo with can_send/can_recv/can_grant" },
+    { f: "ipc/message.rs", n: 245, s: "WORK", d: "Message: MessageType (Call/Send/Recv/Signal/ShareMemory), 256 B inline payload, 4 inline caps, Deadline; builder API" },
+    { f: "ipc/queue.rs", n: 220, s: "WORK", d: "Lock-free SPSC ring buffer: power-of-two capacity, head/tail atomics with Acquire/Release, close semantics" },
+    { f: "ipc/notification.rs", n: 310, s: "WORK", d: "4×AtomicU64 signal slots (256 bits), signal/clear/wait (spin), try_wait/poll, WaitSet for multi-object waits" },
+    { f: "ipc/shared_memory.rs", n: 348, s: "SCAFF", d: "SharedMemoryRegion with rights + ShareMode, derive() ∩ rights, refcounted map/unmap — but frames are placeholder addresses" },
+    { f: "ipc/syscall.rs", n: 331, s: "SCAFF", d: "IpcManager (spin::Once) owning channels/notifications/shm; handle_ipc_* + dispatch_ipc_syscall for SYSCALL_IPC_*; payload pointers ignored" },
+  ]},
+  { group: "kernel/src/capability", rows: [
+    { f: "capability/mod.rs", n: 362, s: "WORK", d: "Capability {id, object_type, object_id, rights}, CapRights bitflags (R/W/X/DEL/ADMIN/GRANT), CapError → KernelError" },
+    { f: "capability/table.rs", n: 309, s: "WORK", d: "Per-process CapabilityTable: BTreeMap<SlotId, Cap>, free-slot reuse, MAX 1024, derive (GRANT + ⊆ rights)" },
+    { f: "capability/transfer.rs", n: 336, s: "SCAFF", d: "CapabilityRegistry (pid→table), transfer Move/Copy/Loan, shallow revoke_capability, CapabilityMessage bundle" },
+    { f: "capability/rights.rs", n: 318, s: "WORK", d: "RightsValidator (validate_for_type, min/full rights), RightsDerivation helpers, AuthorizedOperation (ReadOp/WriteOp/…)" },
+  ]},
+  { group: "kernel/src/syscall", rows: [
+    { f: "syscall/mod.rs", n: 101, s: "WORK", d: "rust_syscall_handler dispatch — Linux-compatible subset: write=1, yield=24, nanosleep=35, getpid=39, exit=60; unknown → u64::MAX" },
+  ]},
+  { group: "userspace", rows: [
+    { f: "init/src/main.rs", n: 265, s: "SCAFF", d: "PID-1 skeleton: banner, hardcoded service manifest, fake Service{pid:0}, wfi spin; no fork/exec" },
+    { f: "shell/src/main.rs", n: 327, s: "SCAFF", d: "Interactive shell: SYSCALL_READ/WRITE loop, hardcoded builtins (ls/ps/date/… return canned data), no pipes" },
+    { f: "shell/src/interpreter.rs", n: 88, s: "SCAFF", d: "Whitespace tokenizer into (cmd, args); raw-pointer input slice; no quoting/pipes/globs" },
+    { f: "filesystem/src/main.rs", n: 70, s: "SCAFF", d: "FS server entry: mount ImmutableFs at /, run FsServer — plus a literal-4 syscall bug in print()" },
+    { f: "filesystem/src/request.rs", n: 150, s: "SCAFF", d: "Wire protocol: FsRequestType/FsResponseType, packed Open/Read/Write/Stat/Mkdir/Unlink/ReadDir structs" },
+    { f: "filesystem/src/vfs.rs", n: 142, s: "SCAFF", d: "FileSystem trait + Vfs stub: mount ignores _fs, open returns handle 100, read returns Ok(0)" },
+    { f: "filesystem/src/server.rs", n: 320, s: "SCAFF", d: "Handle dispatch + response serializers (real struct casts, bounds-checked) — but run() never calls handle_request" },
+    { f: "filesystem/src/immutable.rs", n: 93, s: "SCAFF", d: "Demo backend: read always returns the welcome string, write/mkdir/unlink deny" },
+    { f: "driver-manager/src/main.rs", n: 46, s: "DEAD", d: "Banner + 'scanning virtio' + wfi — declares no mod, so the other three files never compile" },
+    { f: "driver-manager/src/driver.rs", n: 99, s: "DEAD", d: "DriverRegistry + DriverType enum — orphaned (not in the module tree)" },
+    { f: "driver-manager/src/pci.rs", n: 95, s: "DEAD", d: "PciBus/PciDevice/PciClass model — orphaned; read_config always returns 0" },
+    { f: "driver-manager/src/virtio.rs", n: 202, s: "DEAD", d: "VirtioDevice/VirtioBlkDriver model — orphaned; read/write validate then no-op" },
+    { f: "network/src/main.rs", n: 109, s: "SCAFF", d: "Crate root: 64 KiB bump allocator, QEMU-user-net identity (10.0.2.15), NetServer run" },
+    { f: "network/src/ethernet.rs", n: 285, s: "SCAFF", d: "MacAddress/EthernetHeader/frame + full ARP packet parse/serialize — genuine codec" },
+    { f: "network/src/ipv4.rs", n: 301, s: "SCAFF", d: "IPv4 header codec with real one's-complement checksum + ICMP echo reply; unchecked total_len slice" },
+    { f: "network/src/tcp.rs", n: 301, s: "SCAFF", d: "TCP header/segment + 11-state enum — no transitions; ISN always 12345; header byte-order bug" },
+    { f: "network/src/udp.rs", n: 205, s: "SCAFF", d: "UDP datagram codec + sockets; checksum left 0" },
+    { f: "network/src/socket.rs", n: 274, s: "SCAFF", d: "BSD-ish Socket/SocketTable with errno-style errors; buffers only, accept fabricates the peer" },
+    { f: "network/src/server.rs", n: 206, s: "SCAFF", d: "NetServer owns all layers; process_incoming fully written but never called; flush_tcp/udp empty" },
+    { f: "common/src/lib.rs", n: 12, s: "WORK", d: "Crate root for shared userspace utilities; #![forbid(unsafe_op_in_unsafe_fn)]" },
+    { f: "common/src/ipc.rs", n: 161, s: "SCAFF", d: "Userspace Message/Endpoint building SyscallArgs through syscall_api — ABI-ready, no kernel peer yet" },
+    { f: "common/src/buffer.rs", n: 159, s: "SCAFF", d: "SPSC RingBuffer<T,N>, ByteArray, IoVec building blocks" },
+    { f: "common/src/handle.rs", n: 111, s: "SCAFF", d: "Typed handles over NonZeroU64 (File/Socket/Device) + OpenFlags/FileMode" },
+    { f: "common/src/error.rs", n: 22, s: "SCAFF", d: "Shared Error enum" },
+  ]},
+  { group: "libs", rows: [
+    { f: "libs/syscall-api/src/number.rs", n: 49, s: "WORK", d: "31 syscall numbers for the future ABI (EXIT=0, WRITE=23, IPC_SEND=30, CAP_GRANT=40, …)" },
+    { f: "libs/syscall-api/src/lib.rs", n: 78, s: "WORK", d: "The single inline-syscall site for userspace: rax=num, rdi..r9 args, negative-errno decode" },
+    { f: "libs/syscall-api/src/arg.rs", n: 67, s: "WORK", d: "SyscallArgs {num, arg0..arg5} with builder helpers" },
+    { f: "libs/syscall-api/src/error.rs", n: 66, s: "WORK", d: "Linux errno constants (EPERM=1 … ENOSYS=38) + Display" },
+    { f: "libs/cap-std/src/lib.rs", n: 7, s: "DEAD", d: "Empty placeholder — 'to be implemented'" },
+  ]},
+  { group: "boot/ · abandoned UEFI loader (inactive)", rows: [
+    { f: "boot/src/main.rs", n: 175, s: "DEAD", d: "UEFI first stage: memory map → load kernel → RSDP → boot_params → jump; never linked into the live ISO" },
+    { f: "boot/src/kernel.rs", n: 293, s: "DEAD", d: "ELF64 parser + PT_LOAD segment copier — the most substantive code in boot/, with unit tests" },
+    { f: "boot/src/memory.rs", n: 113, s: "DEAD", d: "Real get_memory_map(), but exit_boot_services fabricates the map (desc_size=48, sys table 0)" },
+    { f: "boot/src/params.rs", n: 126, s: "DEAD", d: "A DIFFERENT BootParams than the kernel's — incompatible with the multiboot2 entry" },
+    { f: "boot/src/paging.rs", n: 162, s: "DEAD", d: "Identity paging builder — but the CR3/CR4 asm is commented out, so it changes nothing" },
+    { f: "boot/src/efi.rs", n: 61, s: "DEAD", d: "ACPI RSDP scan over UEFI config tables — genuinely works" },
+  ]},
+];
+
+const STATUS: Record<string, string> = {
+  WORK: "work",
+  SCAFF: "scaf",
+  DEAD: "dead",
+};
+const STATUS_TEXT: Record<string, string> = {
+  WORK: "REAL",
+  SCAFF: "SCAFFOLD",
+  DEAD: "INACTIVE",
+};
+---
+
+<BaseLayout title="File index" description="Every Rust file in the SIGRUN repository, one line each, grouped by subsystem with an honest scaffold-vs-real status.">
+  <p class="eyebrow">Reference · file index</p>
+  <h1>Every file, one line each</h1>
+  <p class="lede">
+    All 82 Rust files in the repository. Use this as the index: when an interviewer names a file, you should be
+    able to say what it does and whether it is real, scaffolded, or inactive.
+  </p>
+
+  <p><span class="badge work">REAL</span> does something real at boot or is exercised in tests ·
+  <span class="badge scaf">SCAFFOLD</span> real shape, not wired to the running system ·
+  <span class="badge dead">INACTIVE</span> compiled out, stubbed, or on an abandoned path.</p>
+
+  <div class="callout">
+    <span class="label">How to read the statuses</span>
+    A file being marked SCAFFOLD is not criticism — it's the difference between "compiles and is tested as a
+    data structure" (most of IPC and capabilities) and "drives hardware at boot" (boot, memory, scheduler,
+    timers, interrupts, syscalls). In an interview, the strongest line is: "the kernel core is live; the
+    peripheral servers are designed, compiled, and tested as structures, and my next milestone is spawning
+    them."
+  </div>
+
+  {
+    FILES.map((group) => (
+      <section>
+        <h2>{group.group}</h2>
+        <table>
+          <tr><th>File</th><th>Lines</th><th>Status</th><th>What it is</th></tr>
+          {
+            group.rows.map((r) => (
+              <tr>
+                <td class="mono">{r.f}</td>
+                <td class="mono">{r.n}</td>
+                <td><span class:list={["badge", STATUS[r.s]]}>{STATUS_TEXT[r.s]}</span></td>
+                <td>{r.d}</td>
+              </tr>
+            ))
+          }
+        </table>
+      </section>
+    ))
+  }
+
+  <div class="backtop"><a href="#">↑ back to top</a></div>
+
+  <div class="pagenav">
+    <a href="/build-test"><span>Prev</span><b>← Build &amp; test</b></a>
+    <a class="next" href="/glossary"><span>Next</span><b>Glossary — the terms to throw around →</b></a>
+  </div>
+</BaseLayout>

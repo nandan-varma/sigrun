@@ -175,6 +175,8 @@ cargo test --workspace --exclude kernel
 
 See [ROADMAP.md](ROADMAP.md) for planned work.
 
+A browsable study guide to the kernel lives in `html/` (Astro: `cd html && pnpm install && pnpm dev`).
+
 ## License
 
 MIT OR Apache-2.0

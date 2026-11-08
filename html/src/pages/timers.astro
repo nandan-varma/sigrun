@@ -1,0 +1,203 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+---
+
+<BaseLayout title="Timers" description="How SIGRUN keeps time: calibrating the LAPIC timer against the PIT, a 10 ms tick, a hierarchical timer wheel, and the still-simulated HPET.">
+  <p class="eyebrow">Subsystem 4 · timers</p>
+  <h1>Timers: calibrating the LAPIC with the PIT</h1>
+  <p class="lede">
+    Everything time-based — the scheduler's 10&nbsp;ms quantum, soft timers, the heartbeat — hangs off one
+    interrupt. SIGRUN calibrates the CPU-local LAPIC timer by measuring it against the slow-but-precise PIT,
+    then lets an atomic counter and a timer wheel do the bookkeeping in software.
+  </p>
+
+  <h2>Why calibrate at all</h2>
+  <p>
+    The LAPIC timer counts down at the CPU <em>bus frequency</em>, which QEMU and real hardware report
+    differently. The PIT (8254) ticks at a fixed, well-known <strong>1,193,182 Hz</strong>. So the kernel asks
+    the PIT to time ~10&nbsp;ms and watches how many LAPIC ticks elapse in that window — that ratio becomes
+    the tick value programmed for the periodic timer.
+  </p>
+
+  <figure class="diagram">
+    <div class="diagram-scroll">
+      <svg viewBox="0 0 1000 660" role="img" aria-labelledby="cal-title cal-desc" xmlns="http://www.w3.org/2000/svg" style="width:100%">
+        <title id="cal-title">LAPIC timer calibration with the PIT</title>
+        <desc id="cal-desc">Flowchart: arm the LAPIC counter at maximum, run the PIT for about ten milliseconds, read the LAPIC's remaining count to derive ticks per ten milliseconds, fall back to an assumed value on failure, then program the LAPIC for periodic interrupts.</desc>
+        <rect width="1000" height="660" fill="#f5f5f5"/>
+        <defs>
+          <marker id="t-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/>
+          </marker>
+          <marker id="t-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/>
+          </marker>
+        </defs>
+
+        <rect x="420" y="30" width="160" height="52" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1.4"/>
+        <text x="500" y="54" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">lapic::init()</text>
+        <text x="500" y="71" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">timer::init() → calibrate()</text>
+        <line x1="500" y1="82" x2="500" y2="112" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#t-arrow)"/>
+
+        <rect x="400" y="112" width="200" height="52" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="500" y="136" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Arm LAPIC counter</text>
+        <text x="500" y="153" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">TimerInit = 0xFFFF_FFFF · ÷16</text>
+        <line x1="500" y1="164" x2="500" y2="194" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#t-arrow)"/>
+
+        <rect x="400" y="194" width="200" height="52" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="500" y="218" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Start PIT ch2 one-shot</text>
+        <text x="500" y="235" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">11931 counts ≈ 10 ms</text>
+        <line x1="500" y1="246" x2="500" y2="276" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#t-arrow)"/>
+
+        <rect x="400" y="276" width="200" height="52" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="500" y="300" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Wait for gate-out</text>
+        <text x="500" y="317" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">port 0x61 bit 5 goes high</text>
+        <line x1="500" y1="328" x2="500" y2="358" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#t-arrow)"/>
+
+        <rect x="400" y="358" width="200" height="52" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="500" y="382" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Read remaining count</text>
+        <text x="500" y="399" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">elapsed = 0xFFFF_FFFF − rem</text>
+        <line x1="500" y1="410" x2="500" y2="438" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#t-arrow)"/>
+
+        <path d="M 500,438 L 604,479 L 500,520 L 396,479 Z" fill="#ececec" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="500" y="482" fill="#2d3142" font-size="10.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">sane?</text>
+
+        <line x1="604" y1="479" x2="716" y2="479" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#t-arrow)"/>
+        <rect x="636" y="459" width="34" height="13" rx="2" fill="#f5f5f5"/>
+        <text x="653" y="468" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">NO</text>
+        <rect x="716" y="455" width="170" height="48" rx="6" fill="#f5f5f5" stroke="#4f5d75" stroke-width="1.1"/>
+        <text x="801" y="477" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Fallback 625,000</text>
+        <text x="801" y="494" fill="#7a8399" font-size="8.5" font-family="'Geist Mono', monospace" text-anchor="middle">assume 1 GHz bus ÷16</text>
+
+        <line x1="500" y1="520" x2="500" y2="556" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#t-arrow-accent)"/>
+        <rect x="480" y="528" width="34" height="13" rx="2" fill="#f5f5f5"/>
+        <text x="497" y="537" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">YES</text>
+
+        <path d="M 716,503 L 716,576 L 520,576" fill="none" stroke="#7a8399" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#t-arrow)"/>
+        <circle cx="500" cy="576" r="4" fill="#2d3142"/>
+
+        <rect x="396" y="592" width="208" height="56" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1.4"/>
+        <text x="500" y="616" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Program periodic timer</text>
+        <text x="500" y="633" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">TimerInit=ticks · LVT=(1&lt;&lt;17)|32</text>
+      </svg>
+    </div>
+    <figcaption>
+      One-time cost at boot. After this, every timer interrupt is exactly 10&nbsp;ms and the kernel never
+      touches the PIT again.
+    </figcaption>
+  </figure>
+
+  <h2>Timekeeping and the wheel</h2>
+  <p>
+    Each tick, <code class="mono">timer::on_tick()</code> runs three things in order: advance
+    <code class="mono">CURRENT_TIME_NS</code> by 10&nbsp;ms (an atomic, so ISR and kernel code agree), fire any
+    expired wheel callbacks, then hand the tick to the scheduler. Timeouts longer than one tick are the job of
+    the <strong>timer wheel</strong> — soft timers bucketed by expiry, so checking "what expired?" is a couple
+    of array reads, not a priority queue scan.
+  </p>
+
+  <figure class="diagram">
+    <div class="diagram-scroll">
+      <svg viewBox="0 0 1000 180" role="img" aria-labelledby="wheel-title wheel-desc" xmlns="http://www.w3.org/2000/svg" style="width:100%">
+        <title id="wheel-title">Timer wheel layout</title>
+        <desc id="wheel-desc">Four wheels of eight slots each with increasing granularity from 1 millisecond to 512 milliseconds, plus an overflow list for long timeouts.</desc>
+        <rect width="1000" height="180" fill="#f5f5f5"/>
+        <rect x="70" y="60" width="180" height="64" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="160" y="86" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Wheel 0</text>
+        <text x="160" y="103" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">8 slots · 1 ms gran.</text>
+        <rect x="280" y="60" width="180" height="64" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="370" y="86" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Wheel 1</text>
+        <text x="370" y="103" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">8 slots · 8 ms gran.</text>
+        <rect x="490" y="60" width="180" height="64" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="580" y="86" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Wheel 2</text>
+        <text x="580" y="103" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">8 slots · 64 ms gran.</text>
+        <rect x="700" y="60" width="180" height="64" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="790" y="86" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Wheel 3</text>
+        <text x="790" y="103" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">8 slots · 512 ms gran.</text>
+        <rect x="700" y="140" width="180" height="30" rx="6" fill="#ececec" stroke="rgba(45,49,66,0.4)" stroke-width="1"/>
+        <text x="790" y="158" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">overflow: 8 entries</text>
+      </svg>
+    </div>
+    <figcaption>
+      Scheduling picks the finest wheel whose range covers the delay; expiry checks the current slot of each
+      wheel. A 64-timer cap and a tiny overflow list keep it bounded.
+    </figcaption>
+  </figure>
+
+  <div class="card">
+    <h3>The tick pipeline, in code</h3>
+<pre><code><span class="c">// timer/mod.rs — called from the LAPIC ISR after EOI</span>
+pub fn on_tick() &#123;
+    advance_time_10ms();                    <span class="c">// CURRENT_TIME_NS += 10 ms (atomic)</span>
+    wheel::check_expired(current_time());   <span class="c">// fire soft timers whose time came</span>
+    crate::scheduler::tick();               <span class="c">// preempt / run the next task</span>
+&#125;
+<span class="c">// lapic.rs — the measured ratio is the periodic countdown value</span>
+let ticks = calibrate();
+LOCAL_APIC.write_reg(Register::TimerDivide, DIVIDE_BY_16);
+LOCAL_APIC.write_reg(Register::TimerInit, ticks);
+LOCAL_APIC.write_reg(Register::TimerVector, (1 &lt;&lt; 17) | TIMER_VECTOR); <span class="c">// periodic · vector 32</span></code></pre>
+    <div class="callout">
+      <span class="label">Why a wheel instead of a sorted list?</span>
+      <code class="mono">check_expired</code> on a wheel is O(1) per slot checked — no heap, no reordering, and
+      the whole structure is a fixed 4×8 array, so it works before any allocator complexity. The classic
+      hierarchical-wheels trade-off is bucketing error: a timer lands in the first wheel whose range covers it,
+      so it may fire up to that wheel's granularity late. 10&nbsp;ms ticks make that invisible here.
+    </div>
+  </div>
+
+  <div class="qa">
+    <h2>Interview Q&amp;A: timers</h2>
+
+    <div class="qa-item">
+      <p class="qa-q"><span class="tag">CORE</span>Why calibrate the LAPIC timer against the PIT instead of hardcoding 10&nbsp;ms?</p>
+      <div class="qa-a">
+        <p>
+          The LAPIC counts bus-clock ticks, and that frequency varies between real CPUs, hypervisors, and even
+          CPU frequency-scaling states. The PIT's 1.193182&nbsp;MHz is a fixed architectural constant, so it's
+          a trustworthy reference. The one-shot dance — arm the LAPIC at max, start a ~10&nbsp;ms PIT count,
+          read how many LAPIC ticks elapsed — yields a per-machine ratio at boot. If the measurement looks
+          impossible (0 or all-ones), a fixed fallback (625,000 ticks ≈ 1&nbsp;GHz ÷ 16) keeps the system
+          booting on exotic hardware.
+        </p>
+      </div>
+      <div class="qa-followup"><b>FOLLOW-UP</b> "Why the ÷16 divider?" — The LAPIC initial-count register is 32 bits; without a divider the countdown would overflow the register at high bus speeds. ÷16 maps a 1–4&nbsp;GHz bus into a countable 62.5–250&nbsp;MHz range.</div>
+    </div>
+
+    <div class="qa-item">
+      <p class="qa-q"><span class="tag">DESIGN</span>What is the timer wheel for, and when would it misbehave?</p>
+      <div class="qa-a">
+        <p>
+          Soft timers — timeouts, sleeps, retries — that must not block the scheduler. A wheel buckets a
+          callback by its expiry's position in a short array instead of scanning a sorted queue; checking is
+          O(1) per tick. It misbehaves (fails to fire or fires late) when a timeout crosses a wheel boundary
+          wrong or exceeds the whole wheel's range — that's why an overflow list exists, and why the 64-entry
+          cap makes <code class="mono">schedule</code> report <code class="mono">WheelFull</code> rather than
+          silently losing timers.
+        </p>
+      </div>
+    </div>
+
+    <div class="qa-item">
+      <p class="qa-q"><span class="tag">GOTCHA</span>The README says HPET is "software-simulated". What does that mean?</p>
+      <div class="qa-a">
+        <p>
+          The HPET driver declares the MMIO base (<code class="mono">0xFED00000</code>) and API
+          (<code class="mono">read_counter</code>, <code class="mono">counter_period</code>) but
+          <code class="mono">is_available()</code> returns false and <code class="mono">read_counter()</code>
+          returns 0 — it's a named capability, not a working device driver. The system's clock source is the
+          atomic 10&nbsp;ms counter, so nothing breaks; the HPET is the future replacement for "tenth of a
+          millisecond resolution" once real hardware matters.
+        </p>
+      </div>
+      <div class="qa-followup"><b>FOLLOW-UP</b> "When would you actually need the HPET?" — Sleep and poll intervals below 10 ms (e.g. network backoff) and better monotonic time for measuring IPC latency; the scheduler only needs the coarse 10 ms tick.</div>
+    </div>
+  </div>
+
+  <div class="backtop"><a href="#">↑ back to top</a></div>
+
+  <div class="pagenav">
+    <a href="/scheduler"><span>Prev</span><b>← Scheduler</b></a>
+    <a class="next" href="/interrupts"><span>Next</span><b>Interrupts — GDT, IDT, exceptions, APIC →</b></a>
+  </div>
+</BaseLayout>

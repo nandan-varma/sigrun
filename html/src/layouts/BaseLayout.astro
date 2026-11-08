@@ -1,0 +1,78 @@
+---
+// Shared chrome for every page: head, sticky top nav, footer.
+// One list of nav items — add a page here and it appears everywhere.
+interface Props {
+  title: string;
+  description?: string;
+}
+
+const { title, description = "SIGRUN microkernel — interview study guide" } = Astro.props;
+const path = Astro.url.pathname.replace(/\/$/, "") || "/";
+
+const NAV = [
+  { href: "/", label: "Home" },
+  { href: "/boot", label: "Boot" },
+  { href: "/memory", label: "Memory" },
+  { href: "/scheduler", label: "Scheduler" },
+  { href: "/timers", label: "Timers" },
+  { href: "/interrupts", label: "Interrupts" },
+  { href: "/syscalls", label: "Syscalls" },
+  { href: "/ipc", label: "IPC" },
+  { href: "/capabilities", label: "Capabilities" },
+  { href: "/userspace", label: "Userspace" },
+  { href: "/build-test", label: "Build" },
+  { href: "/files", label: "Files" },
+  { href: "/glossary", label: "Glossary" },
+];
+---
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title} · SIGRUN study guide</title>
+    <meta name="description" content={description} />
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <header class="site">
+      <div class="wrap">
+        <div class="topbar">
+          <a class="brand" href="/">SIGRUN <b>Study Guide</b></a>
+          <span class="brand-sub">capability microkernel · x86_64 · rust</span>
+        </div>
+        <nav class="main">
+          <ul>
+            {
+              NAV.map((item) => (
+                <li>
+                  <a class:list={[path === item.href && "active"]} href={item.href}>
+                    {item.label}
+                  </a>
+                </li>
+              ))
+            }
+          </ul>
+        </nav>
+      </div>
+    </header>
+
+    <main class="wrap">
+      <slot />
+    </main>
+
+    <footer class="site">
+      <div class="wrap">
+        Generated study guide for SIGRUN (kernel ~15K LoC Rust, x86_64). Diagrams follow the
+        <em>diagram-design</em> editorial system. Code excerpts are quoted from the repository.
+      </div>
+    </footer>
+  </body>
+</html>

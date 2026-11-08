@@ -1,0 +1,92 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+
+const TERMS = [
+  { t: "Multiboot2", d: "The boot protocol GRUB uses to load a kernel. The image must carry a magic value (0xE85250D6) in its first 32 KB; GRUB then enters the kernel in 32-bit protected mode with EAX=0x36d76289 and EBX pointing at an info structure.", href: "/boot" },
+  { t: "Long mode", d: "64-bit mode. Entered by setting EFER.LME, CR4.PAE and then CR0.PG; paging is mandatory in long mode. Protected mode (32-bit) and real mode (16-bit) come before it.", href: "/boot" },
+  { t: "Page tables", d: "PML4 → PDPT → PD → PT: four levels of 512-entry tables; each 9-bit field of the virtual address selects one entry. Entries with the huge-page bit stop the walk early and can cover 1 GiB (PDPT) or 2 MiB (PD).", href: "/memory" },
+  { t: "Identity mapping", d: "Virtual address == physical address. The boot code uses this so the kernel runs at the same addresses the linker placed it, no relocation needed.", href: "/boot" },
+  { t: "CR3", d: "The control register holding the physical address of the current PML4. Reloading it flushes the whole TLB; that's the sledgehammer TLB flush.", href: "/memory" },
+  { t: "TLB / invlpg", d: "The CPU's page-translation cache. invlpg invalidates one virtual address; needed after editing a page-table entry, or the CPU keeps using the stale mapping.", href: "/memory" },
+  { t: "GDT / TSS / IST", d: "The Global Descriptor Table lists segment descriptors (kernel/user code & data). The Task State Segment stores ring-0 stack pointers (RSP0 — used when user mode takes a fault) and the Interrupt Stack Table (IST1 = dedicated double-fault stack).", href: "/interrupts" },
+  { t: "IDT", d: "The Interrupt Descriptor Table: 256 entries mapping vector number → handler address, selector, and gate type. Exceptions use vectors 0–31; the LAPIC timer is vector 32; spurious is 255.", href: "/interrupts" },
+  { t: "DPL / RPL / CPL", d: "Descriptor Privilege Level, Requested Privilege Level, Current Privilege Level. Ring 0 = kernel (most trusted), ring 3 = user. The CPU checks DPL against CPL when the gate is used.", href: "/interrupts" },
+  { t: "APIC / LAPIC / I/O APIC / PIC", d: "Advanced Programmable Interrupt Controller. Each CPU core has a Local APIC (MMIO at 0xFEE00000) for timers and inter-core IPIs; the I/O APIC (0xFEC00000) routes device lines; the legacy dual-PIC is remapped and masked so it stays out of the way.", href: "/interrupts" },
+  { t: "EOI", d: "End-of-interrupt: a write to the LAPIC EOI register that clears the in-service bit. SIGRUN sends EOI before servicing the timer so the next interrupt can fire even across a context switch.", href: "/interrupts" },
+  { t: "PIT", d: "The 8254 Programmable Interval Timer — a fixed 1.193182 MHz countdown. Used once at boot to calibrate the LAPIC timer, because the LAPIC's bus frequency is machine-dependent.", href: "/timers" },
+  { t: "Timer wheel", d: "A hierarchy of small arrays bucketing soft timers by expiry, so 'what expired?' is a few array reads. SIGRUN has 4 wheels × 8 slots (1 ms → 512 ms granularity) plus an overflow list.", href: "/timers" },
+  { t: "spin::Mutex", d: "A busy-wait lock: no sleeping, no reentrancy. Locking it twice in one path deadlocks — SIGRUN's documented scheduler trap.", href: "/scheduler" },
+  { t: "Preemption", d: "Taking the CPU away from a running task without its consent — here, every 10 ms by the timer interrupt. Round-robin picks the next task from the table scan.", href: "/scheduler" },
+  { t: "Context switch", d: "Saving one task's register state and stack, loading another's. SIGRUN's is stack-based: push callee-saved regs + RFLAGS, park RSP, load the next RSP, pop, ret.", href: "/scheduler" },
+  { t: "Callee-saved registers", d: "rbx, rbp, r12–r15 (+ rsp via the frame). A function must preserve them, which is exactly what a context switch must preserve per task; the CPU state to save in sysv x86-64.", href: "/scheduler" },
+  { t: "MLFQ", d: "Multi-Level Feedback Queue: several priority queues with aging/boost. SIGRUN has a 32-level runqueue implementation, tested but not yet the live scheduler.", href: "/scheduler" },
+  { t: "SYSCALL/SYSRET", d: "The fast user→kernel→user path: the CPU jumps to LSTAR, saves the return RIP in RCX and RFLAGS in R11, applies SFMASK, and sysretq returns. It does NOT switch stacks — the kernel stub must.", href: "/syscalls" },
+  { t: "MSR / LSTAR / STAR / SFMASK", d: "Model-Specific Registers, read with rdmsr/wrmsr. LSTAR = syscall entry address; STAR = the GDT selectors the CPU loads on entry/exit; SFMASK = which RFLAGS bits to clear on entry.", href: "/syscalls" },
+  { t: "errno", d: "The error-number convention: a syscall returns a special-range value encoding failure. SIGRUN's userspace lib decodes Linux-style negative errnos (>0xFFFF_FFFF_F000).", href: "/syscalls" },
+  { t: "Capability", d: "An unforgeable, kernel-minted handle for an object that carries its own rights (READ/WRITE/EXEC/DELETE/ADMIN/GRANT). Authority is something you hold, not something a table checks.", href: "/capabilities" },
+  { t: "Derive / delegate", d: "Making a new capability from an existing one with a subset of rights. Needs GRANT on the parent, and can only narrow — the 'no amplification' rule.", href: "/capabilities" },
+  { t: "Revoke", d: "Withdrawing previously-granted authority. SIGRUN's revoke is shallow (find-and-remove in the borrower's table); real capability systems walk a derivation tree.", href: "/capabilities" },
+  { t: "SPSC / lock-free", d: "Single-Producer Single-Consumer queue with no locks: two atomics (head/tail), Acquire/Release pairing, power-of-two capacity masked as a ring. The core of SIGRUN's channel.", href: "/ipc" },
+  { t: "Memory ordering (Acquire/Release)", d: "The atomics contract that makes lock-free code correct: a Release store publishes data before the index; an Acquire load observes everything published before it. Stronger than Relaxed, cheaper than SeqCst.", href: "/ipc" },
+  { t: "Microkernel", d: "Kernel provides primitives only (memory, scheduling, IPC, capabilities); drivers/filesystems/network live in user-space servers. Contrast: monolithic kernels run them in-kernel.", href: "/" },
+  { t: "no_std / #![no_main]", d: "Rust without the standard library and without a main: the opposite of a hosted binary. All of SIGRUN's kernel and most userspace crates are no_std, so they compile for a bare target.", href: "/build-test" },
+  { t: "#[global_allocator]", d: "Declares which type serves alloc::alloc — SIGRUN's 4 MiB bump allocator in BSS. It must implement GlobalAlloc and be Sync.", href: "/memory" },
+  { t: "extern \"x86-interrupt\"", d: "Rust's interrupt-handler ABI: the handler receives the CPU-pushed frame and returns via iretq with the right stack discipline automatically.", href: "/interrupts" },
+  { t: "U/S bit", d: "The page-table flag granting user (ring-3) access to a page. SIGRUN's demo sets it on the whole first 4 GiB — a deliberate hack, not isolation.", href: "/memory" },
+  { t: "SMEP / SMAP", d: "CPU protections against kernel executing/reading user pages. Not enabled in SIGRUN; mentioning them shows you know the hardening path.", href: "/memory" },
+  { t: "Buddy allocator", d: "Power-of-two block allocator; splitting on allocate, XOR-buddy coalesce on free. Fast, low fragmentation, order-0..20 lists in SIGRUN.", href: "/memory" },
+  { t: "Bump / slab allocator", d: "Bump: hand out memory at a cursor, never free — SIGRUN's global allocator. Slab: fixed-size object caches per size class — present in heap.rs, not yet live.", href: "/memory" },
+  { t: "grub-mkrescue", d: "Assembles a bootable ISO from a kernel + GRUB config. SIGRUN must use the i386-pc (BIOS) GRUB — the EFI-only x86_64 brew package boots nothing.", href: "/build-test" },
+  { t: "seL4", d: "The formally-verified microkernel that popularized capability IPC (endpoints as capabilities, badge/notification objects). SIGRUN's IPC is explicitly modeled on this style — a great name to drop.", href: "/ipc" },
+  { t: "Heisenbug-free test split", d: "SIGRUN's testing strategy: data structures unit-tested on the host, hardware behavior covered by the QEMU serial boot test. Neither substitutes for the other.", href: "/build-test" },
+];
+---
+
+<BaseLayout title="Glossary" description="Every term an interviewer might use about SIGRUN — plain definitions, each linked to the page where it matters.">
+  <p class="eyebrow">Reference · glossary</p>
+  <h1>Glossary: the vocabulary that makes you sound fluent</h1>
+  <p class="lede">
+    One crisp definition per term, with a link to the page where it actually matters. If you can explain a term
+    from the list below without looking, you know the material.
+  </p>
+
+  <div class="pitch">
+    <div class="card">
+      <h3>How to use it</h3>
+      <ul>
+        <li>Pick three terms per page and say the definition <em>out loud</em>.</li>
+        <li>Follow each definition with the "so what" — the trade-off or gotcha.</li>
+        <li>The terms marked coral on their pages are the ones interviewers actually probe.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>The three most important</h3>
+      <ul>
+        <li><strong>Capability</strong> — nothing is accessible without a held, rights-carrying reference.</li>
+        <li><strong>Context switch</strong> — saving callee-saved regs, swapping stacks, popping the next task's frame.</li>
+        <li><strong>SYSCALL's stack trap</strong> — the CPU doesn't switch stacks; the stub must, and a user-controlled RSP is a privilege boundary.</li>
+      </ul>
+    </div>
+  </div>
+
+  <dl class="kv">
+    {
+      TERMS.map((term) => (
+        <div>
+          <dt>{term.t}</dt>
+          <dd>
+            {term.d}{" "}
+            {term.href ? <a href={term.href}>→ details</a> : ""}
+          </dd>
+        </div>
+      ))
+    }
+  </dl>
+
+  <div class="backtop"><a href="#">↑ back to top</a></div>
+
+  <div class="pagenav">
+    <a href="/files"><span>Prev</span><b>← File index</b></a>
+    <a class="next" href="/"><span>Next</span><b>Back to Home →</b></a>
+  </div>
+</BaseLayout>

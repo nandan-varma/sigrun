@@ -1,0 +1,176 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+---
+
+<BaseLayout title="Userspace" description="The userspace side of SIGRUN: init, shell, filesystem, network, driver-manager, and the shared libraries — with an honest scaffold-vs-real assessment.">
+  <p class="eyebrow">Beyond the kernel · userspace</p>
+  <h1>Userspace: the servers and libraries, scaffold vs real</h1>
+  <p class="lede">
+    A microkernel's whole point is that drivers and filesystems live <em>outside</em> the kernel. SIGRUN's
+    userspace crates sketch exactly that world — and none of them are spawned yet. This page is the honest map
+    of what each one is, so you can discuss the gap with confidence.
+  </p>
+
+  <h2>The intended architecture</h2>
+  <p>
+    <code class="mono">init</code> becomes PID 1 and spawns servers; each server is an isolated ring-3 process;
+    they talk over IPC channels; the shell sits on top. In that world, a filesystem crash reboots the FS
+    server, not the kernel.
+  </p>
+
+  <h2>What each piece is today</h2>
+  <table>
+    <tr><th>Crate / module</th><th>What it is</th><th>Reality check</th></tr>
+    <tr>
+      <td class="mono">userspace/init</td>
+      <td>PID-1 skeleton: banner, a hardcoded service manifest ("driver-manager"), a <code class="mono">ServiceManager</code> that appends a fake <code class="mono">Service &#123; pid: 0 &#125;</code>, then a <code class="mono">wfi</code> spin.</td>
+      <td><span class="badge scaf">SCAFFOLD</span> No fork/exec; <code class="mono">get_initial_capabilities()</code> returns an empty set.</td>
+    </tr>
+    <tr>
+      <td class="mono">userspace/shell</td>
+      <td>Interactive shell: real read/write via <code class="mono">SYSCALL_READ</code>/<code class="mono">SYSCALL_WRITE</code>, a whitespace tokenizer, cd-style path manipulation.</td>
+      <td><span class="mono">ls</span>/<span class="mono">ps</span>/<span class="mono">date</span>/<span class="mono">hostname</span>/<span class="mono">whoami</span> print hardcoded strings; <span class="mono">cat</span> only knows <span class="mono">/welcome.txt</span>. No pipes, no redirection, no fork/exec/<span class="badge scaf">TOY</span></td>
+    </tr>
+    <tr>
+      <td class="mono">userspace/filesystem</td>
+      <td>An <code class="mono">FsServer</code> with a complete wire protocol (<code class="mono">request.rs</code>: Open/Read/Write/Stat/… typed requests &amp; responses), a <code class="mono">Vfs</code> trait, and an <code class="mono">ImmutableFs</code> demo backend.</td>
+      <td><span class="badge scaf">SCAFFOLD</span> <code class="mono">Vfs::mount</code> ignores the filesystem; <code class="mono">open</code> returns handle 100; <code class="mono">read</code> returns 0; and <code class="mono">run()</code> never even calls <code class="mono">handle_request</code> — the server prints and yields forever.</td>
+    </tr>
+    <tr>
+      <td class="mono">userspace/network</td>
+      <td>Full protocol zoo: real Ethernet/ARP/IPv4/TCP/UDP parsing (<code class="mono">ethernet.rs</code>, <code class="mono">ipv4.rs</code>, <code class="mono">tcp.rs</code>, <code class="mono">udp.rs</code>) with a genuine one's-complement IP checksum, plus a BSD-style <code class="mono">socket.rs</code>.</td>
+      <td><span class="badge scaf">SCAFFOLD</span> TCP declares all 11 states but has zero transitions (connect just sets SynSent); the ISN is always 12345; <code class="mono">NetServer::run()</code> never calls <code class="mono">process_incoming</code>; UDP checksum = 0.</td>
+    </tr>
+    <tr>
+      <td class="mono">userspace/driver-manager</td>
+      <td>PCI bus, virtio model (<code class="mono">VirtioBlkDriver</code> etc.), a driver registry.</td>
+      <td><span class="badge dead">DEAD</span> <code class="mono">main.rs</code> declares no <code class="mono">mod</code> statements, so the 396 lines of <code class="mono">pci.rs</code>/<code class="mono">virtio.rs</code>/<code class="mono">driver.rs</code> are never compiled. <code class="mono">read_config</code> returns 0.</td>
+    </tr>
+    <tr>
+      <td class="mono">userspace/common</td>
+      <td>Shared building blocks: <code class="mono">Message</code>/<code class="mono">Endpoint</code> over <code class="mono">syscall_api</code>, an SPSC <code class="mono">RingBuffer</code>, typed handles (<code class="mono">FileHandle</code>, <code class="mono">SocketHandle</code>…).</td>
+      <td><span class="badge work">REAL SHAPE</span> <code class="mono">Endpoint::send/recv/call</code> genuinely build <code class="mono">SyscallArgs</code> and invoke the syscall wrapper — an ABI that works the day a kernel dispatch exists.</td>
+    </tr>
+    <tr>
+      <td class="mono">libs/syscall-api</td>
+      <td>The register-level syscall ABI: 31 numbered syscalls, <code class="mono">SyscallArgs</code>, and the <code class="mono">syscall()</code> wrapper.</td>
+      <td><span class="badge work">REAL ABI</span> One inline-asm site emits <code class="mono">syscall</code> with num in rax, args in rdi/rsi/rdx/r10/r8/r9, and decodes Linux-style negative errnos.</td>
+    </tr>
+    <tr>
+      <td class="mono">libs/cap-std</td>
+      <td><span class="mono">#![no_std]</span> placeholder with a comment: "to be implemented by Agent 6 (Security Engineer)".</td>
+      <td><span class="badge dead">EMPTY</span> 7 lines.</td>
+    </tr>
+  </table>
+
+  <h2>The syscall ABI that nobody dispatches</h2>
+  <p>
+    <code class="mono">libs/syscall-api/src/number.rs</code> is the interesting part: a clean, subsystem-grouped
+    ABI for the future — process mgmt (<code class="mono">EXIT=0, FORK=1, EXEC=2, WAIT=3, GETPID=4</code>),
+    memory (<code class="mono">MMAP=10, MUNMAP=11, MPROTECT=12</code>), file I/O (<code class="mono">OPEN=20 …
+    LSEEK=25</code>), IPC (<code class="mono">IPC_SEND=30 … IPC_DESTROY=33</code>), capabilities
+    (<code class="mono">CAP_GRANT=40 … CAP_LOOKUP=43</code>), scheduling (<code class="mono">YIELD=50 … WAKE=54</code>),
+    time (<code class="mono">GETTIME=60, CLOCK_GETTIME=61</code>), and process info
+    (<code class="mono">GETCPU=70, GETUID=71</code>).
+  </p>
+<pre><code><span class="c">// libs/syscall-api/src/lib.rs — the single syscall instruction in userspace</span>
+unsafe fn syscall(args: SyscallArgs) -&gt; Result&lt;u64, SyscallError&gt; &#123;
+    let ret: u64;
+    core::arch::asm!("syscall",
+        in("rax") args.num,
+        in("rdi") args.arg0, in("rsi") args.arg1, in("rdx") args.arg2,
+        in("r10") args.arg3, in("r8")  args.arg4, in("r9")  args.arg5,
+        lateout("rax") ret, out("rcx") _, out("r11") _);
+    <span class="c">// Linux convention: a return above 2^52−1 is a negated errno</span>
+    if ret &gt; 0xFFFF_FFFF_F000 &#123; Err(SyscallError::from_raw(ret as i64)) &#125; else &#123; Ok(ret) &#125;
+&#125;</code></pre>
+  <div class="callout warn">
+    <span class="label">The two-ABI split, again</span>
+    Note these numbers are <em>different</em> from the kernel's Linux-compatible dispatch (write = 1 there, 23
+    here). Interfaces first, implementation later — the entire non-kernel tree is designed ahead of the kernel
+    work that would consume it. An interviewer probing this finds an honest "we haven't reconciled the two
+    ABIs yet."
+  </div>
+
+  <h2>How to talk about the gap</h2>
+  <div class="card">
+    <h3>What it would take to spawn init (the real Phase-2 work)</h3>
+    <ul>
+      <li>An embedded ELF of <code class="mono">init</code> in the kernel image, or a loader in userspace.</li>
+      <li>Parse the ELF: map <code class="mono">PT_LOAD</code> segments into user pages (U/S set, correct r/w/x flags per segment) instead of the current "everything is user page" hack.</li>
+      <li>Build argv/envp and a user stack, then enter ring 3 — the machinery already exists: <code class="mono">init_ring3_task_stack</code> + <code class="mono">ring3_trampoline</code> in <code class="mono">switch.rs</code> and <code class="mono">launch_user_demo</code> in <code class="mono">main.rs</code> prove the iretq path.</li>
+      <li>Reconcile the syscall ABI (the libs' numbers with the kernel's dispatch), then wire endpoint capabilities to process capability tables so the FS server can actually receive requests.</li>
+    </ul>
+  </div>
+
+  <div class="qa">
+    <h2>Interview Q&amp;A: userspace</h2>
+
+    <div class="qa-item">
+      <p class="qa-q"><span class="tag">CORE</span>Why did you write all this userspace code if nothing runs it?</p>
+      <div class="qa-a">
+        <p>
+          Two reasons. First, the protocol and ABI work is genuinely transferable: the FS wire protocol, the
+          syscall numbers/wrapper, and the network parsers are real designs that compile and are unit-tested,
+          so the day the kernel can spawn processes, the server side is mostly done. Second, it pinned down the
+          API surface — writing the caller tells you what the kernel must provide, which is why the IPC
+          <code class="mono">Message</code> shape in <code class="mono">common</code> and the kernel's
+          <code class="mono">Message</code> agree on 256-byte payloads and 4 inline caps. It's scaffold with a
+          purpose.
+        </p>
+      </div>
+      <div class="qa-followup"><b>FOLLOW-UP</b> "Which file would you delete first?" — The honest answer is none, but <code class="mono">userspace/driver-manager</code>'s orphaned modules come closest to dead weight: they're not even in the module tree, so they don't compile and can't be tested. Either wire them into <code class="mono">main.rs</code> or cut them.</div>
+    </div>
+
+    <div class="qa-item">
+      <p class="qa-q"><span class="tag">DESIGN</span>How would the ring-3 trampoline get used for a real init process?</p>
+      <div class="qa-a">
+        <p>
+          <code class="mono">init_ring3_task_stack</code> already builds the exact frame that makes a context
+          switch land in user mode: the switch frame contains <code class="mono">ring3_trampoline</code> as the
+          return address, and the trampoline is one instruction — <code class="mono">iretq</code> — which pops
+          the SS/RSP/RFLAGS/CS/RIP of an IRETQ frame stacked below. The kernel's demo does the same thing
+          manually with inline asm; the switch-based version is what a scheduler-driven PID 1 would use, because
+          the process must be a task, not a one-shot jump.
+        </p>
+      </div>
+      <div class="qa-followup"><b>FOLLOW-UP</b> "What's missing between the trampoline and a booting init?" — A real ELF loader (segments ≠ one function), per-process address spaces, and TSS/IST plumbing that switches stacks on the user→kernel interrupt — the pieces are each smaller than the ones already built, which is why the roadmap calls Phase 2 "closest to done".</div>
+    </div>
+
+    <div class="qa-item">
+      <p class="qa-q"><span class="tag">GOTCHA</span>What's the situation with the UEFI <code class="mono">boot/</code> loader?</p>
+      <div class="qa-a">
+        <p>
+          It's an alternative entry convention that lost: a <code class="mono">uefi</code>-crate loader that
+          would call <code class="mono">fn(&amp;BootParams)</code>, while the working path is multiboot2 with
+          <code class="mono">_start(magic, info)</code>. It has the best ELF64 parser in the tree and a real
+          RSDP scan, but its paging enable and exit-boot-services are stubbed, so it cannot boot the kernel.
+          It's a half-migrated boot architecture, and the right move is either finish it (for real-hardware
+          future) or delete it (for honesty). Keeping it around as-is is the only defensible-but-weak position.
+        </p>
+      </div>
+    </div>
+
+    <div class="qa-item">
+      <p class="qa-q"><span class="tag">CORE</span>If I gave you a week, what would you do first to make it real?</p>
+      <div class="qa-a">
+        <p>
+          Wire the pieces that already exist, in this order: (1) make the fs/network servers actually call
+          <code class="mono">handle_request</code>/<code class="mono">process_incoming</code> in their run
+          loops and route IPC syscalls to the channel manager; (2) reconcile the two syscall ABI tables; (3)
+          embed and spawn <code class="mono">init</code> via the ring-3 trampoline with a minimal ELF loader and
+          a real per-process address space; (4) enforce capability checks (and object refcounts) at the actual
+          access sites. That order ships a demo of the promised architecture on top of the data structures
+          already built — each step is integration, not new research.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="backtop"><a href="#">↑ back to top</a></div>
+
+  <div class="pagenav">
+    <a href="/capabilities"><span>Prev</span><b>← Capabilities</b></a>
+    <a class="next" href="/build-test"><span>Next</span><b>Build &amp; test — toolchain, ISO, QEMU →</b></a>
+  </div>
+</BaseLayout>

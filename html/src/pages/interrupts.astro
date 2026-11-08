@@ -1,0 +1,203 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+---
+
+<BaseLayout title="Interrupts" description="SIGRUN interrupt plumbing: the GDT and TSS, a 256-entry IDT with exception handlers, and the APIC/PIC controllers that route device interrupts.">
+  <p class="eyebrow">Subsystem 5 · interrupts</p>
+  <h1>Interrupts: GDT, IDT, exceptions, and the APIC</h1>
+  <p class="lede">
+    Interrupts are how hardware talks to the kernel. SIGRUN builds the three tables the CPU consults — GDT,
+    IDT, TSS — installs handlers for every exception, and routes device interrupts through the Local APIC
+    instead of the legacy PIC.
+  </p>
+
+  <figure class="diagram">
+    <div class="diagram-scroll">
+      <svg viewBox="0 0 1000 320" role="img" aria-labelledby="int-title int-desc" xmlns="http://www.w3.org/2000/svg" style="width:100%">
+        <title id="int-title">Interrupt delivery path</title>
+        <desc id="int-desc">A device or CPU exception produces a vector number; the IDT maps it to a handler; the CPU pushes an interrupt frame; the handler either services the IRQ (EOI first) or logs the exception and halts.</desc>
+        <rect width="1000" height="320" fill="#f5f5f5"/>
+        <defs>
+          <marker id="i-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/>
+          </marker>
+          <marker id="i-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/>
+          </marker>
+        </defs>
+
+        <rect x="40" y="60" width="150" height="56" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="115" y="84" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Sources</text>
+        <text x="115" y="102" fill="#4f5d75" font-size="8.5" font-family="'Geist Mono', monospace" text-anchor="middle">LAPIC · CPU · devices</text>
+        <line x1="190" y1="88" x2="238" y2="88" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#i-arrow)"/>
+
+        <rect x="238" y="60" width="120" height="56" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="298" y="84" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Vector</text>
+        <text x="298" y="102" fill="#4f5d75" font-size="8.5" font-family="'Geist Mono', monospace" text-anchor="middle">0–255</text>
+        <line x1="358" y1="88" x2="406" y2="88" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#i-arrow)"/>
+
+        <rect x="406" y="60" width="130" height="56" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1.4"/>
+        <text x="471" y="84" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">IDT lookup</text>
+        <text x="471" y="102" fill="#4f5d75" font-size="8.5" font-family="'Geist Mono', monospace" text-anchor="middle">256 gates · handler addr</text>
+        <line x1="536" y1="88" x2="584" y2="88" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#i-arrow)"/>
+
+        <rect x="584" y="60" width="140" height="56" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="654" y="84" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">CPU pushes frame</text>
+        <text x="654" y="102" fill="#4f5d75" font-size="8.5" font-family="'Geist Mono', monospace" text-anchor="middle">RIP·CS·RFLAGS·RSP·SS</text>
+        <line x1="724" y1="88" x2="772" y2="88" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#i-arrow)"/>
+
+        <rect x="772" y="60" width="170" height="56" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="857" y="84" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Handler</text>
+        <text x="857" y="102" fill="#4f5d75" font-size="8.5" font-family="'Geist Mono', monospace" text-anchor="middle">extern "x86-interrupt"</text>
+
+        <path d="M 857,116 L 857,150 L 545,150 L 545,212" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#i-arrow)"/>
+        <rect x="508" y="133" width="44" height="13" rx="2" fill="#f5f5f5"/>
+        <text x="530" y="142" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">IRQ</text>
+
+        <rect x="420" y="212" width="250" height="58" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="545" y="236" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Device IRQ path</text>
+        <text x="545" y="253" fill="#4f5d75" font-size="8.5" font-family="'Geist Mono', monospace" text-anchor="middle">EOI first → work (timer → tick)</text>
+
+        <line x1="918" y1="116" x2="918" y2="212" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#i-arrow-accent)"/>
+        <rect x="880" y="140" width="48" height="13" rx="2" fill="#f5f5f5"/>
+        <text x="904" y="149" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">EXC</text>
+
+        <rect x="800" y="212" width="180" height="58" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1.4"/>
+        <text x="890" y="236" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Exception path</text>
+        <text x="890" y="253" fill="#4f5d75" font-size="8.5" font-family="'Geist Mono', monospace" text-anchor="middle">log vector · read CR2 · halt</text>
+      </svg>
+    </div>
+    <figcaption>
+      Everything the CPU does for us — gate lookup, privilege-check, stack push — collapses into one typed
+      function call per vector. The spurious (vector 255) handler intentionally sends no EOI.
+    </figcaption>
+  </figure>
+
+  <h2>The three tables</h2>
+
+  <div class="card">
+    <h3>GDT + TSS — the segments nobody uses anymore, except for the stack</h3>
+    <p>
+      In 64-bit mode segmentation is mostly vestigial, but the CPU still needs valid code/data descriptors and,
+      critically, the TSS for <em>stacks</em>. SIGRUN's GDT has 7 entries: null, kernel code/data
+      (<code class="mono">0x08</code>/<code class="mono">0x10</code>), user data/code
+      (<code class="mono">0x18</code>/<code class="mono">0x20</code> — order chosen to match the STAR MSR
+      layout used by SYSRET), and a two-part TSS descriptor at <code class="mono">0x28</code>. The TSS carries
+      <code class="mono">RSP0</code> (top of the IST stack — where the CPU switches to when ring-3 code takes
+      an interrupt) and <code class="mono">IST1</code> (a dedicated double-fault stack, so a corrupted stack
+      can't prevent the panic handler from running).
+    </p>
+  </div>
+
+  <div class="card">
+    <h3>IDT — 256 entries, installed once</h3>
+<pre><code><span class="c">// idt.rs — a gate = handler offset (split across 3 fields) + selector + type</span>
+pub fn set_handler(&amp;mut self, vector: u8,
+                   handler: extern "x86-interrupt" fn(InterruptFrame)) &#123;
+    self.entries[vector as usize] = IdtEntry::new(handler as u64, 0x08, 0x8E);
+&#125;
+<span class="c">// KERNEL_IDT is a 'static mut — lidt promises the table lives forever,</span>
+<span class="c">// so it cannot be a stack-local.</span>
+static mut KERNEL_IDT: Idt = Idt::new();</code></pre>
+    <p>
+      Handlers for exceptions 0–31 log what happened (page fault also reads CR2 — the faulting address) and
+      halt. The LAPIC timer lands on vector 32 and spurious on 255. Note the handler declaration:
+      <code class="mono">extern "x86-interrupt"</code> is the Rust ABI for interrupt stubs — the compiler emits
+      the right prologue/epilogue (including <code class="mono">iretq</code>) and can even push the error code
+      for exceptions that have one (<code class="mono">set_handler_with_error</code>).
+    </p>
+  </div>
+
+  <div class="card">
+    <h3>APIC — the modern interrupt controller</h3>
+    <p>
+      The Local APIC is MMIO at <code class="mono">0xFEE00000</code> (identity-mapped by the boot
+      <code class="mono">1&nbsp;GiB</code> page that covers 3–4&nbsp;GiB). SIGRUN enables it via the spurious
+      register (also installing vector 255), zeros the task priority, and programs the timer. The legacy dual
+      PIC (ports 0x20/0xA0) is remapped to vectors 0x20/0x28 and then <em>fully masked</em> — it stays dead so
+      only the APIC delivers interrupts. EOI is a write of 0 to the <code class="mono">0xB0</code> register.
+    </p>
+<pre><code><span class="c">// interrupt/mod.rs — the whole timer ISR, EOI FIRST</span>
+pub extern "x86-interrupt" fn timer(_frame: InterruptFrame) &#123;
+    unsafe &#123; LOCAL_APIC.eoi() &#125;;   <span class="c">// allow next interrupt even if we switch context</span>
+    crate::timer::on_tick();       <span class="c">// advance clock → fire wheel → scheduler::tick()</span>
+&#125;</code></pre>
+  </div>
+
+  <div class="callout warn">
+    <span class="label">Honest gaps here</span>
+    <code class="mono">register_handler()</code>, <code class="mono">enable_irq()</code> and
+    <code class="mono">disable_irq()</code> are currently no-ops — the timer is hardwired at vector 32 and no
+    other device IRQ has a runtime registration path yet. The exception handlers also halt outright rather
+    than killing just the faulting task (no exception-to-task mapping yet).
+  </div>
+
+  <div class="qa">
+    <h2>Interview Q&amp;A: interrupts</h2>
+
+    <div class="qa-item">
+      <p class="qa-q"><span class="tag">CORE</span>What is <code class="mono">extern "x86-interrupt"</code> and why is it essential here?</p>
+      <div class="qa-a">
+        <p>
+          It's Rust's built-in ABI for interrupt handlers. The compiler knows the CPU has already pushed an
+          interrupt frame, so the handler receives <code class="mono">&amp;InterruptFrame</code> as an argument
+          instead of pretending normal calling-convention registers are intact, and it emits
+          <code class="mono">iretq</code> (not a normal return) on exit. Without it you'd write a naked
+          assembly stub per vector to save everything and fix the stack — the standard trick in C kernels.
+          Because these are <code class="mono">#[feature(abi_x86_interrupt)]</code> functions, the flag lives
+          with the crate root and, importantly, not in <code class="mono">lib.rs</code>, which must avoid
+          double-compiling the <code class="mono">global_asm!</code> boot entry.
+        </p>
+      </div>
+    </div>
+
+    <div class="qa-item">
+      <p class="qa-q"><span class="tag">GOTCHA</span>Why must KERNEL_IDT be a static, and why IST1 for double fault?</p>
+      <div class="qa-a">
+        <p>
+          <code class="mono">lidt</code> expects the table to remain valid for the whole kernel lifetime; a
+          static guarantees that, where a stack local would be a dangling pointer from the CPU's point of view.
+          Preserving the IDT across the whole run is also why <code class="mono">load(&amp;'static self)</code>
+          demands a <code class="mono">'static</code> reference in the signature. IST1 exists because a double
+          fault means something went wrong <em>while handling an interrupt</em> — often a corrupted or
+          exhausted stack. Switching to a fresh known-good stack (via the TSS interrupt-stack-table) lets the
+          handler log and halt instead of triple-faulting into a reset.
+        </p>
+      </div>
+      <div class="qa-followup"><b>FOLLOW-UP</b> "What would a triple fault do?" — On bare metal the CPU resets (often an infinite reboot loop); under QEMU it can just exit. It's the catastrophic tail of a double fault you failed to stack-switch out of.</div>
+    </div>
+
+    <div class="qa-item">
+      <p class="qa-q"><span class="tag">DESIGN</span>Why bother disabling the PIC if the APIC is there?</p>
+      <div class="qa-a">
+        <p>
+          Because both controllers sit on the same delivery path, and the PIC's default vectors (0x08–0x0F)
+          collide with CPU exceptions. SIGRUN remaps the PIC to 0x20/0x28 (a required ICW dance) then masks
+          every line, so the APIC is the only source — this is the modern x86 pattern. Keeping the remap code
+          is also useful: portable kernels still run on machines where the PIC must be initialized before the
+          APIC can be trusted.
+        </p>
+      </div>
+    </div>
+
+    <div class="qa-item">
+      <p class="qa-q"><span class="tag">GOTCHA</span>Why does the spurious handler send no EOI?</p>
+      <div class="qa-a">
+        <p>
+          A spurious interrupt is the APIC telling you "I had to deliver something, but the real interrupt
+          disappeared" — typically when a device was masking/unmasking lines mid-delivery. If you EOI it, you
+          can clear the LAPIC's in-service bit for an interrupt that <em>is</em> still pending, losing a real
+          event. The firmware-accurate response — used by Linux too — is to return without EOI. SIGRUN's
+          handler logs nothing and returns, which is exactly right.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="backtop"><a href="#">↑ back to top</a></div>
+
+  <div class="pagenav">
+    <a href="/timers"><span>Prev</span><b>← Timers</b></a>
+    <a class="next" href="/syscalls"><span>Next</span><b>Syscalls — SYSCALL/SYSRET &amp; the ring-3 demo →</b></a>
+  </div>
+</BaseLayout>

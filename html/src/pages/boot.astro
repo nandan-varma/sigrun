@@ -1,0 +1,256 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+---
+
+<BaseLayout title="Boot" description="How SIGRUN goes from GRUB to a running Rust kernel: the multiboot2 header, 1 GiB huge pages, and the long-mode transition.">
+  <p class="eyebrow">Subsystem 1 · boot</p>
+  <h1>Boot: from GRUB to a running Rust kernel</h1>
+  <p class="lede">
+    The CPU starts in 32-bit mode with paging off. SIGRUN's own assembly builds the page tables, flips on
+    long mode, and hands control to Rust — all in <code class="mono">kernel/src/arch/x86_64/boot.rs</code>.
+  </p>
+
+  <h2>Why boot is hard</h2>
+  <p>
+    An x86_64 CPU doesn't power on in 64-bit mode. It starts in <strong>16-bit real mode</strong> (via the
+    BIOS), the bootloader (GRUB2) puts it in <strong>32-bit protected mode</strong> with paging off, and only
+    then can <em>we</em> take over. Entering long mode is a choreographed sequence: build page tables, enable
+    PAE, load CR3, set <code>EFER.LME</code>, then set <code>CR0.PG</code> — and the moment paging turns on
+    with LME active, the CPU is in 64-bit mode. SIGRUN does all of this in one <code class="mono">global_asm!</code>
+    block.
+  </p>
+
+  <figure class="diagram">
+    <div class="diagram-scroll">
+      <svg viewBox="0 0 1000 700" role="img" aria-labelledby="boot-title boot-desc" xmlns="http://www.w3.org/2000/svg" style="width:100%">
+        <title id="boot-title">SIGRUN boot flow from GRUB to kmain</title>
+        <desc id="boot-desc">Flowchart: GRUB loads the multiboot2 image, the 32-bit entry checks for long mode via CPUID, builds PML4 and PDPT pages with 1 GiB huge pages, enables PAE and paging, far-jumps to the 64-bit entry, and calls kmain. If long mode is missing it halts.</desc>
+        <rect width="1000" height="700" fill="#f5f5f5"/>
+        <defs>
+          <marker id="b-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/>
+          </marker>
+          <marker id="b-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/>
+          </marker>
+        </defs>
+        <ellipse cx="500" cy="36" rx="82" ry="20" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="500" y="33" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">GRUB2 + QEMU</text>
+        <text x="500" y="47" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">multiboot2 loader</text>
+        <line x1="500" y1="56" x2="500" y2="84" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#b-arrow)"/>
+        <rect x="430" y="84" width="140" height="56" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="500" y="110" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">entry _start</text>
+        <text x="500" y="127" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">EAX=magic · EBX=info</text>
+        <line x1="500" y1="140" x2="500" y2="166" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#b-arrow)"/>
+        <path d="M 500,166 L 604,207 L 500,248 L 396,207 Z" fill="#ececec" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="500" y="203" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">CPUID</text>
+        <text x="500" y="218" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">long mode?</text>
+        <line x1="604" y1="207" x2="712" y2="207" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#b-arrow)"/>
+        <rect x="640" y="188" width="34" height="13" rx="2" fill="#f5f5f5"/>
+        <text x="657" y="197" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">NO</text>
+        <ellipse cx="766" cy="207" rx="52" ry="20" fill="#f5f5f5" stroke="#4f5d75" stroke-width="1.1" stroke-dasharray="5,4"/>
+        <text x="766" y="204" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">halt32</text>
+        <text x="766" y="218" fill="#7a8399" font-size="8.5" font-family="'Geist Mono', monospace" text-anchor="middle">hlt loop</text>
+        <line x1="500" y1="248" x2="500" y2="294" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#b-arrow-accent)"/>
+        <rect x="480" y="258" width="34" height="13" rx="2" fill="#f5f5f5"/>
+        <text x="497" y="267" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">YES</text>
+        <rect x="410" y="294" width="180" height="60" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="500" y="320" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">PML4 + PDPT</text>
+        <text x="500" y="338" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">4 × 1 GiB huge pages (0–4 GiB)</text>
+        <line x1="500" y1="354" x2="500" y2="394" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#b-arrow)"/>
+        <rect x="398" y="394" width="204" height="60" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="500" y="420" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Enable long mode</text>
+        <text x="500" y="438" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">lgdt · PAE · cr3 · EFER.LME · cr0.PG</text>
+        <line x1="500" y1="454" x2="500" y2="494" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#b-arrow)"/>
+        <rect x="430" y="494" width="140" height="54" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="500" y="518" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Far jump</text>
+        <text x="500" y="535" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">0x08:_boot_64_entry</text>
+        <line x1="500" y1="548" x2="500" y2="586" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#b-arrow-accent)"/>
+        <rect x="392" y="586" width="216" height="62" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1.4"/>
+        <text x="500" y="611" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">kmain_from_multiboot2</text>
+        <text x="500" y="629" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">validates magic → kmain() → idle</text>
+      </svg>
+    </div>
+    <figcaption>
+      Boot flow: coral path is the happy path down the middle; the only branch is "does the CPU support long mode at all?".
+    </figcaption>
+  </figure>
+
+  <h2>Step by step</h2>
+
+  <div class="card">
+    <h3>1 · The multiboot2 header</h3>
+    <p>
+      GRUB scans the first 32&nbsp;KB of the ISO image for a magic value <code class="mono">0xE85250D6</code>.
+      SIGRUN emits it from a dedicated <code class="mono">.multiboot2_header</code> linker section placed first
+      in the image, with a checksum that makes the sum of the first four words zero:
+    </p>
+<pre><code><span class="c">// boot.rs — global_asm!, Intel syntax</span>
+".section .multiboot2_header, \"a\"",
+".align 8",
+"_mb2_start:",
+".long 0xe85250d6",<span class="c">      // magic</span>
+".long 0",<span class="c">                   // architecture: i386</span>
+".long _mb2_end - _mb2_start",
+".long -(0xe85250d6 + 0 + (_mb2_end - _mb2_start))",<span class="c">  // checksum</span>
+".short 0", ".short 0", ".long 8",<span class="c">   // end tag</span></code></pre>
+    <p>
+      GRUB then loads the ELF, zeroes the BSS (which is where the boot stack and page tables live — declared
+      <code class="mono">@nobits</code>), and calls <code class="mono">_start</code> with
+      <code class="mono">EAX = 0x36d76289</code> (multiboot2 magic) and <code class="mono">EBX</code> = physical
+      address of the multiboot2 info struct.
+    </p>
+  </div>
+
+  <div class="card">
+    <h3>2 · Check the CPU, build the tables</h3>
+    <p>
+      After <code class="mono">cli</code> and installing a 64&nbsp;KB boot stack, the code verifies long mode
+      exists with <code class="mono">cpuid</code> leaf <code class="mono">0x80000001</code> (bit 29 of EDX =
+      LM). Then it writes one PML4 entry and four PDPT entries — each PDPT entry is a
+      <strong>1&nbsp;GiB huge page</strong> (bits <code class="mono">0x83</code> = present + writable + huge):
+    </p>
+<pre><code><span class="c">// identity-map first 4 GiB with 1-GiB huge pages</span>
+"lea eax, [_boot_pdpt]",
+"or  eax, 3",
+"mov dword ptr [_boot_pml4],     eax",<span class="c">   // PML4[0] → PDPT (present|write)</span>
+"mov dword ptr [_boot_pml4 + 4], 0",
+"mov dword ptr [_boot_pdpt +  0], 0x00000083",<span class="c">  // 0–1 GiB</span>
+"mov dword ptr [_boot_pdpt +  8], 0x40000083",<span class="c">  // 1–2 GiB</span>
+"mov dword ptr [_boot_pdpt + 16], 0x80000083",<span class="c">  // 2–3 GiB</span>
+"mov dword ptr [_boot_pdpt + 24], 0xC0000083",<span class="c">  // 3–4 GiB (LAPIC @ 0xFEE00000 lives here)</span></code></pre>
+    <p>
+      Why four PDPT entries and not a PD/PT tree? Because a PDPT entry with the
+      <code class="mono">HUGE_PAGE</code> bit covers a full GiB — four of them cover the entire low 4&nbsp;GiB,
+      which is everything the boot code and the kernel's identity-mapped region need.
+    </p>
+  </div>
+
+  <div class="card">
+    <h3>3 · The long-mode switch</h3>
+<pre><code><span class="c">// Enable PAE, point CR3 at the PML4, set EFER.LME, then flip CR0.PG</span>
+"mov eax, cr4",
+"or  eax, 0x20",<span class="c">              // CR4.PAE</span>
+"mov cr4, eax",
+"lea eax, [_boot_pml4]",
+"mov cr3, eax",<span class="c">               // page-table base</span>
+"mov ecx, 0xC0000080",<span class="c">        // EFER MSR</span>
+"rdmsr",
+"or  eax, 0x100",<span class="c">             // EFER.LME bit 8</span>
+"wrmsr",
+"mov eax, cr0",
+"or  eax, 0x80000001",<span class="c">        // CR0.PE | CR0.PG — paging ON ⇒ long mode</span>
+"mov cr0, eax",
+<span class="c">// far jump: selector 0x08 (our 64-bit code segment), target _boot_64_entry</span>
+".byte 0xEA",
+".long _boot_64_entry",
+".short 0x08",</code></pre>
+    <p>
+      The far jump is the switch: with paging on and LME set, the CPU is executing in 64-bit mode the instant
+      <code class="mono">CR0.PG</code> is set, but the instruction stream was encoded as 32-bit — so the far
+      jump (encoded raw as <code class="mono">0xEA</code>, because the Intel-syntax mnemonic differs between
+      assemblers) reloads CS with our flat 64-bit code segment and lands on 64-bit code.
+    </p>
+  </div>
+
+  <div class="card">
+    <h3>4 · Hand over to Rust</h3>
+    <p>
+      <code class="mono">_boot_64_entry</code> flushes segment-register caches and calls
+      <code class="mono">kmain_from_multiboot2(magic, info_ptr)</code> using the System V calling convention
+      (arguments in <code class="mono">RDI</code>/<code class="mono">RSI</code> — the values saved from
+      EAX/EBX, now zero-extended). That function validates the magic, builds a
+      <code class="mono">BootParams</code> struct (kernel physical/virtual start at
+      <code class="mono">0x100000</code>, size computed from the linker symbol
+      <code class="mono">__kernel_end</code>), and calls <code class="mono">kmain()</code>, which initializes
+      each subsystem in order and finally enters the idle loop (see
+      <a href="/scheduler">Scheduler</a>).
+    </p>
+  </div>
+
+  <div class="qa">
+    <h2>Interview Q&amp;A: boot</h2>
+
+    <div class="qa-item">
+      <p class="qa-q"><span class="tag">CORE</span>Why do you need assembly at all? Why can't the first Rust function do this?</p>
+      <div class="qa-a">
+        <p>
+          Because Rust — even <code class="mono">no_std</code> — compiles against an assumed environment: it
+          needs a stack, and before we build one the CPU is running on whatever GRUB left us with paging off,
+          in 32-bit mode. The entry point must set up its own stack, verify CPUID, build page tables by writing
+          raw memory, and reprogram control registers — all things a high-level function can't express without
+          either inline asm or the same assembly. So the 32-bit prologue is one
+          <code class="mono">global_asm!</code> block, and the first thing Rust does
+          (<code class="mono">serial::init()</code> for logging) happens after the transition.
+        </p>
+      </div>
+    </div>
+
+    <div class="qa-item">
+      <p class="qa-q"><span class="tag">CORE</span>Why 1&nbsp;GiB huge pages instead of mapping with 4&nbsp;KiB pages?</p>
+      <div class="qa-a">
+        <p>
+          Boot-time simplicity. With 1&nbsp;GiB pages, the entire first 4&nbsp;GiB — kernel, multiboot info,
+          the LAPIC's MMIO at <code class="mono">0xFEE00000</code>, everything — needs just 1 PML4 entry + 4
+          PDPT entries, and the CPU's page-walker stops at PDPT. With 4&nbsp;KiB pages we'd need a million
+          PTEs and four levels of tables before we could even run. It's also safe here: the physical addresses
+          genuinely correspond to RAM/MMIO in identity mapping, and a real kernel refines this later (the
+          memory subsystem allocates page tables from the frame allocator).
+        </p>
+      </div>
+      <div class="qa-followup">
+        <b>FOLLOW-UP</b> "When would 1 GiB huge pages be wrong?" — Wasting address space or permissions
+        granularity: you can't give ring-3 just a page inside a 1 GiB mapping, and you can't mark individual
+        pages no-execute. SIGRUN solves this in the demo by flipping the U/S bit on whole PML4/PDPT entries —
+        deliberately a hack.
+      </div>
+    </div>
+
+    <div class="qa-item">
+      <p class="qa-q"><span class="tag">GOTCHA</span>Why does the linker need <code class="mono">-C relocation-model=static -C code-model=kernel</code>?</p>
+      <div class="qa-a">
+        <p>
+          Our 32-bit boot code writes absolute addresses into page-table entries
+          (<code class="mono">lea eax, [_boot_pdpt]</code>), which lld encodes as
+          <code class="mono">R_X86_64_32</code> relocations. With the default PIC/pie code model, lld rejects
+          those. The flags tell rustc to generate non-relocatable code whose absolute addresses fit in 32 bits —
+          exactly what 32-bit instructions need. The <code class="mono">.cargo/config.toml</code> applies them
+          per-target for <code class="mono">x86_64-unknown-none</code>, and removing them breaks the build.
+        </p>
+      </div>
+    </div>
+
+    <div class="qa-item">
+      <p class="qa-q"><span class="tag">GOTCHA</span>Why does <code class="mono">qemu -kernel</code> not work, and why must it be an ISO?</p>
+      <div class="qa-a">
+        <p>
+          QEMU 5+ refuses to load 64-bit ELF kernels directly via <code class="mono">-kernel</code>; the
+          supported path here is a bootable ISO. SIGRUN's script builds <code class="mono">sigrun.iso</code>
+          with <code class="mono">i686-elf-grub-mkrescue</code> (BIOS/legacy GRUB — the Homebrew
+          <code class="mono">x86_64-elf-grub</code> package only ships an EFI target and silently fails to
+          boot). This is also why the abandoned <code class="mono">boot/</code> UEFI loader exists: it was an
+          alternative entry convention (<code class="mono">fn(&amp;BootParams)</code>) incompatible with the
+          multiboot2 <code class="mono">_start</code> signature.
+        </p>
+      </div>
+    </div>
+
+    <div class="qa-item">
+      <p class="qa-q"><span class="tag">DESIGN</span>What is the very first thing that can be tested after boot?</p>
+      <div class="qa-a">
+        <p>
+          Serial output. <code class="mono">log::early_init()</code> initializes COM1 (115200 baud, 8N1) before
+          anything else, so every boot message is observable — the run script greps the serial stream for
+          "SIGRUN kernel running" as the boot test, and the test exits 0 only if it appears.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="backtop"><a href="#">↑ back to top</a></div>
+
+  <div class="pagenav">
+    <a href="/"><span>Prev</span><b>← Home</b></a>
+    <a class="next" href="/memory"><span>Next</span><b>Memory — buddy allocator &amp; paging →</b></a>
+  </div>
+</BaseLayout>

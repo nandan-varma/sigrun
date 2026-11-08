@@ -1,0 +1,174 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+---
+
+<BaseLayout title="Build & test" description="How SIGRUN compiles and boots: the nightly toolchain, static-relocation rustflags, the linker script, ISO creation with GRUB, QEMU runs, and the test strategy.">
+  <p class="eyebrow">Tooling · build &amp; test</p>
+  <h1>Build &amp; test: from cargo to a booting ISO</h1>
+  <p class="lede">
+    Building an OS means telling the toolchain exactly what you are not getting: no std, no libc, no dynamic
+    linking, no OS. SIGRUN's build encodes those assumptions in <code class="mono">.cargo/config.toml</code>,
+    a linker script, and a set of scripts.
+  </p>
+
+  <figure class="diagram">
+    <div class="diagram-scroll">
+      <svg viewBox="0 0 1000 240" role="img" aria-labelledby="bt-title bt-desc" xmlns="http://www.w3.org/2000/svg" style="width:100%">
+        <title id="bt-title">Build pipeline from source to booting ISO</title>
+        <desc id="bt-desc">Kernel sources and the linker script go through cargo for the x86_64-unknown-none target; the resulting ELF plus a GRUB config are combined by grub-mkrescue into a bootable ISO; QEMU boots it and its serial output is checked for the kernel running banner.</desc>
+        <rect width="1000" height="240" fill="#f5f5f5"/>
+        <defs>
+          <marker id="b2-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/>
+          </marker>
+          <marker id="b2-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/>
+          </marker>
+        </defs>
+
+        <rect x="30" y="70" width="150" height="80" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="105" y="100" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">kernel sources</text>
+        <text x="105" y="118" fill="#4f5d75" font-size="8.5" font-family="'Geist Mono', monospace" text-anchor="middle">~15K LoC Rust</text>
+        <text x="105" y="134" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">linker.ld · build.rs</text>
+        <line x1="180" y1="110" x2="240" y2="110" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#b2-arrow)"/>
+
+        <rect x="240" y="60" width="170" height="100" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="325" y="88" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">cargo build</text>
+        <text x="325" y="106" fill="#4f5d75" font-size="8.5" font-family="'Geist Mono', monospace" text-anchor="middle">x86_64-unknown-none</text>
+        <text x="325" y="121" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">relocation-model=static</text>
+        <text x="325" y="135" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">code-model=kernel</text>
+        <text x="325" y="150" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">nightly toolchain</text>
+        <line x1="410" y1="110" x2="470" y2="110" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#b2-arrow)"/>
+
+        <rect x="470" y="70" width="140" height="80" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="540" y="100" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">kernel ELF</text>
+        <text x="540" y="118" fill="#4f5d75" font-size="8.5" font-family="'Geist Mono', monospace" text-anchor="middle">multiboot2 header</text>
+        <line x1="610" y1="110" x2="670" y2="110" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#b2-arrow)"/>
+
+        <rect x="670" y="60" width="170" height="100" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1.4"/>
+        <text x="755" y="88" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">grub-mkrescue</text>
+        <text x="755" y="106" fill="#4f5d75" font-size="8.5" font-family="'Geist Mono', monospace" text-anchor="middle">i686-elf-grub (BIOS)</text>
+        <text x="755" y="121" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">+ grub.cfg → sigrun.iso</text>
+        <line x1="840" y1="110" x2="900" y2="110" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#b2-arrow-accent)"/>
+
+        <rect x="900" y="50" width="80" height="120" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="940" y="98" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">qemu</text>
+        <text x="940" y="115" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">-cdrom</text>
+        <text x="940" y="129" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">boot ISO</text>
+        <text x="940" y="146" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">serial → log</text>
+      </svg>
+    </div>
+    <figcaption>
+      One pipeline: the ELF is loaded by GRUB (not by QEMU's <code class="mono">-kernel</code>), and the boot
+      test greps the serial stream rather than reading a return code.
+    </figcaption>
+  </figure>
+
+  <h2>The linker script keeps GRUB happy</h2>
+<pre><code><span class="c">// kernel/linker.ld — order matters; the multiboot2 header must be first</span>
+SECTIONS &#123;
+  . = 0x100000;                 <span class="c">// kernel loads at 1 MiB physical</span>
+  .multiboot2_header : &#123; KEEP(*(.multiboot2_header)) &#125;   <span class="c">// in the first 32 KiB</span>
+  .boot.text  : &#123; *(.boot.text) &#125;    <span class="c">// 32-bit entry, page tables, stacks</span>
+  .boot.data  : &#123; *(.boot.data) &#125;    <span class="c">// boot GDT, GDTR</span>
+  .text : &#123; *(.text*) &#125;
+  .rodata : &#123; *(.rodata*) &#125;
+  .data : &#123; *(.data*) &#125;
+  .boot.pgtbl (NOLOAD) : &#123; *(.boot.pgtbl) &#125;  <span class="c">// zeroed by the loader (BSS-like)</span>
+  .boot.stack (NOLOAD) : &#123; *(.boot.stack) &#125;  <span class="c">// 64 KiB boot stack</span>
+  .bss : &#123; *(.bss*) &#125;
+  <span class="c">// __kernel_end marks the end; used to compute kernel_size at boot</span>
+&#125;</code></pre>
+  <p>
+    The <code class="mono">.boot.text</code>/<code class="mono">.boot.data</code>/<code class="mono">.boot.pgtbl</code>/<code class="mono">.boot.stack</code>
+    sections exist so the 32-bit prologue and its zero-initialized tables sit near the start of the image and
+    the loader's BSS-zeroing covers them. <code class="mono">.eh_frame</code> and
+    <code class="mono">.note.GNU-stack</code> are discarded because unwinding metadata and an exec-stack note
+    carry no meaning on bare metal.
+  </p>
+
+  <h2>Testing strategy</h2>
+  <table>
+    <tr><th>Layer</th><th>Command</th><th>What it proves</th></tr>
+    <tr><td>Format</td><td class="mono">cargo fmt --all -- --check</td><td>Style gates the diff.</td></tr>
+    <tr><td>Lint</td><td class="mono">cargo clippy -p kernel --target x86_64-unknown-none</td><td>Clippy needs the cross target explicitly — a classic trap.</td></tr>
+    <tr><td>Unit tests</td><td class="mono">cargo test -p kernel -- ipc::tests</td><td>Kernel data structures (IPC, capability, scheduler runqueue, timer) compile and test on the <strong>host target</strong>; <code class="mono">#[cfg(test)]</code> pulls in std and excludes the cross-compiled binary path. This is why <code class="mono">boot.rs</code> gates its <code class="mono">global_asm!</code> behind <code class="mono">#[cfg(target_os = "none")]</code> — a host link would otherwise clash with the C runtime's <code class="mono">_start</code>.</td></tr>
+    <tr><td>Boot</td><td class="mono">./scripts/run.sh --test</td><td>Boots QEMU headless and greps serial for the "SIGRUN kernel running" banner; exit 0 iff found. The only end-to-end green light.</td></tr>
+    <tr><td>GDB</td><td class="mono">./scripts/run.sh --gdb</td><td>Pauses QEMU at reset; attach with <code class="mono">gdb target/…/kernel -ex 'target remote :1234'</code> — the whole kernel has DWARF because it's cross-compiled with debug info.</td></tr>
+  </table>
+  <div class="callout">
+    <span class="label">Why unit tests can run on the host at all</span>
+    The test modules live inside <code class="mono">#![no_std]</code> crates, but under
+    <code class="mono">cargo test</code> the crate is linked as a host binary with std available to tests —
+    <code class="mono">alloc</code> works, atomics work, and the pure data structures (buddy lists, SPSC
+    queue, capability rights) are architecture-independent. Only code touching ports, MMIO, or page tables is
+    untested on host, which is what the QEMU boot test covers. That split — data structures on host, hardware
+    in QEMU — is the entire test strategy.
+  </div>
+
+  <div class="qa">
+    <h2>Interview Q&amp;A: build &amp; test</h2>
+
+    <div class="qa-item">
+      <p class="qa-q"><span class="tag">CORE</span>Why nightly Rust, and which unstable features do you use?</p>
+      <div class="qa-a">
+        <p>
+          Three things: <code class="mono">global_asm!</code> for the boot code and the context switch,
+          <code class="mono">#![feature(abi_x86_interrupt)]</code> for typed interrupt handlers, and stable
+          inline <code class="mono">asm!</code> ergonomics that shipped later than the kernel started. The
+          features are deliberately few and each is pinned to a real need — the "no speculative nightly
+          features" rule is part of the project's correctness-over-speed stance.
+        </p>
+      </div>
+      <div class="qa-followup"><b>FOLLOW-UP</b> "Could it build on stable?" — Mostly, by now: inline asm is stable, but <code class="mono">global_asm!</code> and the interrupt ABI are still nightly-gated, so the honest answer is "not without significant rewriting of the boot assembly."</div>
+    </div>
+
+    <div class="qa-item">
+      <p class="qa-q"><span class="tag">GOTCHA</span>Why does the build need <code class="mono">-C relocation-model=static -C code-model=kernel</code>?</p>
+      <div class="qa-a">
+        <p>
+          Two layers of the same problem: the compiler must not assume position-independence (there's no loader
+          to relocate us — the linker places the kernel at 1&nbsp;MiB and that's final), and the 32-bit boot
+          code needs absolute addresses that fit in 32 bits. lld expresses those as
+          <code class="mono">R_X86_64_32</code> relocations and rejects them under the default PIE model, so the
+          flags are what keep <code class="mono">lea eax, [_boot_pdpt]</code> linkable. Removing them is the
+          fastest way to break the build on purpose.
+        </p>
+      </div>
+    </div>
+
+    <div class="qa-item">
+      <p class="qa-q"><span class="tag">GOTCHA</span>Why is the ISO built with <code class="mono">i686-elf-grub</code> rather than the x86_64 package?</p>
+      <div class="qa-a">
+        <p>
+          The Homebrew <code class="mono">x86_64-elf-grub</code> builds only an EFI target; EFI GRUB can't load
+          the BIOS/boot sector path that multiboot2 images expect from a legacy ISO. The
+          <code class="mono">i686-elf-grub</code> package ships the <code class="mono">i386-pc</code> target with
+          <code class="mono">grub-mkrescue</code>, which produces a BIOS-bootable ISO that QEMU's default
+          SeaBIOS firmware runs. The same split explains why <code class="mono">qemu -kernel</code> won't work —
+          it's the wrong boot contract for a 64-bit ELF.
+        </p>
+      </div>
+    </div>
+
+    <div class="qa-item">
+      <p class="qa-q"><span class="tag">DESIGN</span>What can't your test suite catch?</p>
+      <div class="qa-a">
+        <p>
+          Everything that only runs at ring 0 with real hardware timing: TLB flush correctness under load,
+          interrupt reentrancy races, the context switch's register discipline (a unit test can't watch a
+          register), and MMIO behavior. That's why the QEMU boot test exists and why the emulator is the only
+          regression gate. The next step in rigor would be Miri for the unsafe data structures (the roadmap
+          lists it), then running the same ISO under KVM, then real hardware over serial.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="backtop"><a href="#">↑ back to top</a></div>
+
+  <div class="pagenav">
+    <a href="/userspace"><span>Prev</span><b>← Userspace</b></a>
+    <a class="next" href="/files"><span>Next</span><b>File index — every file in one line →</b></a>
+  </div>
+</BaseLayout>

@@ -27,3 +27,11 @@ target/coverage/
 # Temporary
 *.tmp
 *.bak
+
+# Agent scratch
+.pi/
+
+# Study guide (Astro)
+html/node_modules/
+html/dist/
+html/.astro/

@@ -1,0 +1,200 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+---
+
+<BaseLayout
+  title="Home"
+  description="SIGRUN, a capability-based microkernel in Rust for x86_64 — plain-English interview study guide with diagrams."
+>
+  <p class="eyebrow">Overview · index</p>
+  <h1>SIGRUN — a capability-based microkernel, explained in plain words</h1>
+  <p class="lede">
+    SIGRUN is a hobby operating system written in Rust for x86_64. It boots from GRUB into 64-bit long
+    mode, sets up paging, a preemptive scheduler, timers, interrupts, IPC, and a capability system — and
+    it is honest about what is finished and what is a scaffold.
+  </p>
+
+  <p>
+    The whole kernel is <strong>~15,000 lines of Rust across 82 files</strong>. This guide walks every
+    subsystem with one diagram, one plain-English explanation, one annotated snippet, and the interview
+    questions that go with it. Read it top-to-bottom once, then drill into whatever an interviewer pokes at.
+  </p>
+
+  <div class="pitch">
+    <div class="card">
+      <h3>What it is</h3>
+      <ul>
+        <li>Microkernel: <em>memory, scheduling, IPC, capabilities</em> in the kernel; everything else in userspace.</li>
+        <li>Capability-based: every resource is an unforgeable, rights-carrying reference — no global "permissions table".</li>
+        <li>Rust: <code class="mono">unsafe</code> only where hardware demands it (assembly, MMIO, register access).</li>
+        <li>Real ring-3 path: a user process <em>does</em> run via <code class="mono">iretq</code> and calls real <code class="mono">syscall</code>/<code class="mono">sysretq</code>.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>What actually works today</h3>
+      <ul>
+        <li><span class="badge work">WORKING</span> Boot: GRUB2 → multiboot2 → long mode</li>
+        <li><span class="badge work">WORKING</span> Buddy frame allocator, 4-level paging</li>
+        <li><span class="badge work">WORKING</span> Preemptive round-robin scheduler (10 ms LAPIC timer)</li>
+        <li><span class="badge work">WORKING</span> Ring-3 demo process + SYSCALL/SYSRET + serial <code>write</code></li>
+        <li><span class="badge scaf">SCAFFOLD</span> Channels, notifications, shared memory, capability tables (data structures + syscall stubs; kernel-internal demo only)</li>
+        <li><span class="badge scaf">SCAFFOLD</span> Userspace crates (filesystem, network, shell…) compile on host, never spawned</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>One picture of the whole system</h2>
+
+  <figure class="diagram">
+    <div class="diagram-scroll">
+      <svg viewBox="0 0 1000 520" role="img" aria-labelledby="ov-title ov-desc" xmlns="http://www.w3.org/2000/svg" style="width:100%">
+        <title id="ov-title">SIGRUN system layered from hardware to userspace</title>
+        <desc id="ov-desc">Six horizontal bands: CPU hardware at the bottom; above it the GRUB/multiboot2 boot layer; the kernel core; the capability and IPC layer; and userspace servers at the top, with a note that userspace is not yet spawned.</desc>
+        <rect width="1000" height="520" fill="#f5f5f5"/>
+        <text x="34" y="300" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" letter-spacing="0.14em" text-anchor="middle">ABSTRACTION</text>
+        <path d="M 34,278 L 34,262" fill="none" stroke="#7a8399" stroke-width="1.2" marker-end="url(#ov-up)"/>
+        <text x="34" y="352" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" letter-spacing="0.14em" text-anchor="middle">↑ RING 3</text>
+        <text x="34" y="374" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" letter-spacing="0.14em" text-anchor="middle">↑ RING 0</text>
+        <text x="34" y="396" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" letter-spacing="0.14em" text-anchor="middle">↑ HARDWARE</text>
+        <defs>
+          <marker id="ov-up" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 6, 8 6, 4 0" fill="#7a8399"/>
+          </marker>
+        </defs>
+        <rect x="70" y="60" width="860" height="72" rx="6" fill="#f5f5f5" stroke="rgba(45,49,66,0.40)" stroke-width="1"/>
+        <text x="92" y="100" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" letter-spacing="0.14em">L3 · RING 3</text>
+        <text x="250" y="100" fill="#2d3142" font-size="15" font-weight="600" font-family="'Geist', sans-serif">Userspace servers</text>
+        <text x="700" y="94" fill="#7a8399" font-size="9.5" font-family="'Geist Mono', monospace" text-anchor="end">init · shell · filesystem · network · driver-manager</text>
+        <text x="700" y="112" fill="#7a8399" font-size="9.5" font-family="'Geist Mono', monospace" text-anchor="end">compiled for host — not spawned in ring 3 yet</text>
+        <rect x="70" y="148" width="860" height="72" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1.4"/>
+        <text x="92" y="188" fill="#eb6c36" font-size="9" font-family="'Geist Mono', monospace" letter-spacing="0.14em">L2 · KERNEL</text>
+        <text x="250" y="188" fill="#2d3142" font-size="15" font-weight="600" font-family="'Geist', sans-serif">IPC + Capabilities</text>
+        <text x="700" y="182" fill="#7a8399" font-size="9.5" font-family="'Geist Mono', monospace" text-anchor="end">channels · notifications · shared memory</text>
+        <text x="700" y="200" fill="#7a8399" font-size="9.5" font-family="'Geist Mono', monospace" text-anchor="end">per-process capability tables · rights · transfer</text>
+        <rect x="70" y="236" width="860" height="72" rx="6" fill="#ececec" stroke="rgba(45,49,66,0.40)" stroke-width="1"/>
+        <text x="92" y="276" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" letter-spacing="0.14em">L1 · RING 0</text>
+        <text x="250" y="276" fill="#2d3142" font-size="15" font-weight="600" font-family="'Geist', sans-serif">Kernel core</text>
+        <text x="700" y="270" fill="#7a8399" font-size="9.5" font-family="'Geist Mono', monospace" text-anchor="end">memory (buddy + paging + heap) · scheduler</text>
+        <text x="700" y="288" fill="#7a8399" font-size="9.5" font-family="'Geist Mono', monospace" text-anchor="end">LAPIC timer · GDT/IDT/APIC · syscall entry</text>
+        <rect x="70" y="324" width="860" height="72" rx="6" fill="#f5f5f5" stroke="rgba(45,49,66,0.40)" stroke-width="1"/>
+        <text x="92" y="364" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" letter-spacing="0.14em">L0 · BOOT</text>
+        <text x="250" y="364" fill="#2d3142" font-size="15" font-weight="600" font-family="'Geist', sans-serif">GRUB2 · multiboot2 · long-mode transition</text>
+        <text x="700" y="358" fill="#7a8399" font-size="9.5" font-family="'Geist Mono', monospace" text-anchor="end">i686-elf-grub-mkrescue ISO</text>
+        <text x="700" y="376" fill="#7a8399" font-size="9.5" font-family="'Geist Mono', monospace" text-anchor="end">_start (32-bit asm) → 64-bit kmain</text>
+        <rect x="70" y="412" width="860" height="72" rx="6" fill="#f5f5f5" stroke="rgba(45,49,66,0.40)" stroke-width="1" stroke-dasharray="5,4"/>
+        <text x="92" y="452" fill="#7a8399" font-size="9" font-family="'Geist Mono', monospace" letter-spacing="0.14em">HW</text>
+        <text x="250" y="452" fill="#2d3142" font-size="15" font-weight="600" font-family="'Geist', sans-serif">x86_64 CPU + chips</text>
+        <text x="700" y="446" fill="#7a8399" font-size="9.5" font-family="'Geist Mono', monospace" text-anchor="end">LAPIC/PIT · COM1 serial · RAM · virtio (QEMU)</text>
+      </svg>
+    </div>
+    <figcaption>
+      Layer stack: the system as six bands. The coral band (IPC + capabilities) is the design's identity —
+      message passing protected by unforgeable capability references.
+    </figcaption>
+  </figure>
+
+  <h2>How to use this guide</h2>
+  <div class="toc">
+    <ul>
+      <li><a href="/boot">1 · Boot — 32→64 bit transition in assembly</a></li>
+      <li><a href="/memory">2 · Memory — buddy allocator, paging, heaps</a></li>
+      <li><a href="/scheduler">3 · Scheduler — preemption and context switch</a></li>
+      <li><a href="/timers">4 · Timers — PIT-calibrated LAPIC, timer wheel</a></li>
+      <li><a href="/interrupts">5 · Interrupts — GDT, IDT, exceptions, APIC</a></li>
+      <li><a href="/syscalls">6 · Syscalls — SYSCALL/SYSRET and the ring-3 demo</a></li>
+      <li><a href="/ipc">7 · IPC — channels, notifications, shared memory</a></li>
+      <li><a href="/capabilities">8 · Capabilities — rights, derive, transfer, revoke</a></li>
+      <li><a href="/userspace">9 · Userspace — servers and libs, scaffold vs real</a></li>
+      <li><a href="/build-test">10 · Build &amp; test — toolchain, ISO, QEMU</a></li>
+      <li><a href="/files">11 · File index — every file, one line each</a></li>
+      <li><a href="/glossary">12 · Glossary — terms an interviewer will use</a></li>
+    </ul>
+  </div>
+
+  <h2>The honest status box</h2>
+  <div class="callout warn">
+    <span class="label">Read this before any interview</span>
+    Do not oversell. The kernel boots, preempts, switches context, and runs a ring-3 demo that calls
+    <em>real</em> syscalls — that is an honest achievement. But: the userspace crates under
+    <code class="mono">userspace/</code> are compiled for the host and never spawned; the VFS, network stack,
+    and shell return hardcoded data; <code class="mono">boot/</code> is an abandoned UEFI path. Interviews
+    reward the person who can <strong>say exactly what works and what is next</strong>, not the person who
+    claims a finished OS. The start-of-boot log is roughly: validate boot params → memory manager →
+    GDT/IDT/APIC → timer calibration → scheduler → capabilities → IPC → SYSCALL setup → kernel tasks →
+    ring-3 init demo → idle loop.
+  </div>
+
+  <h2>One-minute pitch</h2>
+  <p>
+    "SIGRUN is a microkernel I wrote in Rust to understand what sits between an <code class="mono">if
+    let</code> and the bare metal. It boots through GRUB2's multiboot2 protocol: my own assembly
+    transitions from 32-bit protected mode to 64-bit long mode using 1&nbsp;GB huge pages, then calls Rust.
+    The kernel owns four things — a buddy frame allocator plus 4-level paging, a preemptive round-robin
+    scheduler driven by a PIT-calibrated LAPIC timer at 10&nbsp;ms, interrupt plumbing (GDT/IDT/APIC with a
+    double-fault IST), and a capability-based IPC layer where every channel endpoint, notification, and
+    shared-memory region is referenced by a rights-carrying capability. I also implemented SYSCALL/SYSRET
+    and demonstrated a real ring-3 process printing to the serial console through a syscall. The honest
+    gaps are that the userspace servers are still scaffolds — they compile, but nothing has spawned them yet."
+  </p>
+
+  <h2>Repository map</h2>
+  <table>
+    <tr><th>Path</th><th>What lives there</th><th>Status</th></tr>
+    <tr><td class="mono">kernel/src/</td><td>Arch (boot asm, GDT/IDT/APIC/serial/syscall/switch), memory, scheduler, timer, interrupt, ipc, capability, syscall, log</td><td><span class="badge work">CORE</span></td></tr>
+    <tr><td class="mono">userspace/</td><td>init, shell, filesystem, network, driver-manager, common — servers for a future world</td><td><span class="badge scaf">SCAFFOLD</span></td></tr>
+    <tr><td class="mono">libs/</td><td>syscall-api (numbers + inline syscall wrapper), cap-std (empty placeholder)</td><td><span class="badge scaf">SCAFFOLD</span></td></tr>
+    <tr><td class="mono">boot/</td><td>Abandoned UEFI loader (has a real ELF parser, but paging/exit-boot asm is stubbed)</td><td><span class="badge dead">INACTIVE</span></td></tr>
+    <tr><td class="mono">scripts/</td><td>build.sh (ISO), run.sh (QEMU), test.sh, grub.cfg</td><td><span class="badge work">WORKING</span></td></tr>
+  </table>
+
+  <div class="qa">
+    <h2>Starter interview questions</h2>
+
+    <div class="qa-item">
+      <p class="qa-q"><span class="tag">WARMUP</span>Why did you write an operating system from scratch?</p>
+      <div class="qa-a">
+        <p>
+          To close the loop between application code and hardware: memory allocation, context switching,
+          interrupts, and privilege levels are usually abstracted away, and I wanted to own them. It is also
+          the densest way to learn Rust's <code>unsafe</code> model — every <code>unsafe</code> block in the
+          kernel has a concrete hardware justification (register access, MMIO, paging structures), which is
+          exactly what "correct over fast" means in practice.
+        </p>
+      </div>
+    </div>
+
+    <div class="qa-item">
+      <p class="qa-q"><span class="tag">WARMUP</span>What is the difference between a microkernel and a monolithic kernel, and where does SIGRUN sit?</p>
+      <div class="qa-a">
+        <p>
+          A monolithic kernel (Linux) runs drivers, filesystems, and network stacks in the kernel with direct
+          hardware access; a microkernel moves those services to user-space processes that talk over IPC, so
+          a driver crash takes down the driver, not the kernel. SIGRUN sits firmly on the microkernel side:
+          the kernel provides memory, scheduling, IPC, and capabilities, and the design puts filesystem,
+          network, driver management, and the shell in separate <em>servers</em>. The trade-off is IPC cost
+          and complexity — which is why SIGRUN invests in capability-carried channel endpoints and shared
+          memory as the fast path.
+        </p>
+      </div>
+    </div>
+
+    <div class="qa-item">
+      <p class="qa-q"><span class="tag">WARMUP</span>What does "capability-based" mean in one sentence?</p>
+      <div class="qa-a">
+        <p>
+          There is no central access-control list: a process can only touch an object if it holds a capability
+          for it — a handle the kernel minted — and the capability itself carries the rights (read/write/grant),
+          so rights can be narrowed by derivation and withdrawn by revocation (see
+          <a href="/capabilities">Capabilities</a>).
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="backtop"><a href="#">↑ back to top</a></div>
+
+  <div class="pagenav">
+    <span></span>
+    <a class="next" href="/boot"><span>Next</span><b>Boot — 32→64 bit in assembly →</b></a>
+  </div>
+</BaseLayout>

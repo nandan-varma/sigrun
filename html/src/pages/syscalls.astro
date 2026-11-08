@@ -1,0 +1,250 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+---
+
+<BaseLayout title="Syscalls" description="SIGRUN's SYSCALL/SYSRET fast path, the SyscallFrame register save area, the dispatch table, and the working ring-3 demo process.">
+  <p class="eyebrow">Subsystem 6 · syscalls</p>
+  <h1>Syscalls: SYSCALL/SYSRET and the ring-3 demo</h1>
+  <p class="lede">
+    This is the part that makes the OS real: a user process in ring 3 executes the <code class="mono">syscall</code>
+    instruction, the CPU jumps to a kernel-configured address, a hand-written stub builds a register frame, and
+    Rust dispatches — then <code class="mono">sysretq</code> drops back to user code.
+  </p>
+
+  <figure class="diagram">
+    <div class="diagram-scroll">
+      <svg viewBox="0 0 1000 520" role="img" aria-labelledby="sys-title sys-desc" xmlns="http://www.w3.org/2000/svg" style="width:100%">
+        <title id="sys-title">Ring 3 to kernel and back via SYSCALL and SYSRET</title>
+        <desc id="sys-desc">Sequence: user code issues syscall with the number in rax; the CPU dispatches via the LSTAR MSR to the assembly entry, which switches to a kernel stack and builds a register frame; the Rust handler matches the number and writes to the serial port; control returns through sysretq.</desc>
+        <rect width="1000" height="520" fill="#f5f5f5"/>
+        <defs>
+          <marker id="y-call" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/>
+          </marker>
+          <marker id="y-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/>
+          </marker>
+        </defs>
+
+        <rect x="70" y="30" width="120" height="52" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="130" y="54" fill="#2d3142" font-size="11.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">User (ring 3)</text>
+        <text x="130" y="71" fill="#4f5d75" font-size="8.5" font-family="'Geist Mono', monospace" text-anchor="middle">user_init_process</text>
+        <rect x="270" y="30" width="120" height="52" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="330" y="54" fill="#2d3142" font-size="11.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">CPU + MSRs</text>
+        <text x="330" y="71" fill="#4f5d75" font-size="8.5" font-family="'Geist Mono', monospace" text-anchor="middle">LSTAR · STAR · SFMASK</text>
+        <rect x="470" y="30" width="140" height="52" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="540" y="54" fill="#2d3142" font-size="11.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">syscall_entry (asm)</text>
+        <text x="540" y="71" fill="#4f5d75" font-size="8.5" font-family="'Geist Mono', monospace" text-anchor="middle">builds SyscallFrame</text>
+        <rect x="690" y="30" width="140" height="52" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="760" y="54" fill="#2d3142" font-size="11.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">rust handler</text>
+        <text x="760" y="71" fill="#4f5d75" font-size="8.5" font-family="'Geist Mono', monospace" text-anchor="middle">match frame.rax</text>
+        <rect x="880" y="30" width="100" height="52" rx="6" fill="#f5f5f5" stroke="#2d3142" stroke-width="1.2"/>
+        <text x="930" y="54" fill="#2d3142" font-size="11.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">COM1</text>
+        <text x="930" y="71" fill="#4f5d75" font-size="8.5" font-family="'Geist Mono', monospace" text-anchor="middle">serial::write</text>
+
+        <g stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="3,3">
+          <line x1="130" y1="82" x2="130" y2="470"/>
+          <line x1="330" y1="82" x2="330" y2="470"/>
+          <line x1="540" y1="82" x2="540" y2="470"/>
+          <line x1="760" y1="82" x2="760" y2="470"/>
+          <line x1="930" y1="82" x2="930" y2="470"/>
+        </g>
+
+        <rect x="536" y="120" width="8" height="210" fill="rgba(45,49,66,0.06)" stroke="#4f5d75" stroke-width="0.8"/>
+        <rect x="756" y="230" width="8" height="90" fill="rgba(45,49,66,0.06)" stroke="#4f5d75" stroke-width="0.8"/>
+
+        <line x1="130" y1="140" x2="322" y2="140" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#y-call)"/>
+        <rect x="150" y="125" width="160" height="13" rx="2" fill="#f5f5f5"/>
+        <text x="230" y="134" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">SYSCALL rax=1</text>
+
+        <line x1="330" y1="180" x2="532" y2="180" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#y-call)"/>
+        <rect x="350" y="165" width="160" height="13" rx="2" fill="#f5f5f5"/>
+        <text x="430" y="174" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">LSTAR → ENTRY</text>
+
+        <path d="M 536,220 C 480,220 480,246 536,246" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#y-call)"/>
+        <rect x="300" y="216" width="176" height="13" rx="2" fill="#f5f5f5"/>
+        <text x="388" y="225" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">SWAP RSP · PUSH FRAME</text>
+
+        <line x1="540" y1="280" x2="752" y2="280" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#y-call)"/>
+        <rect x="565" y="265" width="160" height="13" rx="2" fill="#f5f5f5"/>
+        <text x="645" y="274" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">HANDLER(FRAME)</text>
+
+        <path d="M 756,320 C 700,320 700,346 756,346" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#y-call)"/>
+        <rect x="560" y="316" width="140" height="13" rx="2" fill="#f5f5f5"/>
+        <text x="630" y="325" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">MATCH nr = 1</text>
+
+        <line x1="760" y1="380" x2="922" y2="380" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#y-call)"/>
+        <rect x="795" y="365" width="100" height="13" rx="2" fill="#f5f5f5"/>
+        <text x="845" y="374" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">WRITE BYTES</text>
+
+        <line x1="760" y1="420" x2="548" y2="420" stroke="#4f5d75" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#y-call)"/>
+        <rect x="620" y="405" width="70" height="13" rx="2" fill="#f5f5f5"/>
+        <text x="655" y="414" fill="#7a8399" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">rax = len</text>
+
+        <line x1="540" y1="458" x2="138" y2="458" stroke="#eb6c36" stroke-width="1.4" stroke-dasharray="5,4" marker-end="url(#y-accent)"/>
+        <rect x="300" y="443" width="80" height="13" rx="2" fill="#f5f5f5"/>
+        <text x="340" y="452" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">SYSRETQ</text>
+      </svg>
+    </div>
+    <figcaption>
+      One round trip for <code class="mono">sys_write(1, msg, len)</code>. Note the CPU does <em>not</em> switch
+      stacks on SYSCALL — the stub must do that itself, which is the part people forget in interviews.
+    </figcaption>
+  </figure>
+
+  <h2>The MSR setup</h2>
+  <p>
+    Three model-specific registers configure the fast path. <code class="mono">LSTAR</code> holds the kernel
+    entry address; <code class="mono">STAR</code> encodes which GDT selectors to load on entry/exit;
+    <code class="mono">SFMASK</code> says which RFLAGS bits to clear on entry (we clear IF, so the handler
+    starts with interrupts off).
+  </p>
+<pre><code><span class="c">// arch/x86_64/syscall.rs — init()</span>
+wrmsr(MSR_EFER, rdmsr(MSR_EFER) | EFER_SCE);          <span class="c">// enable SYSCALL/SYSRET</span>
+<span class="c">// STAR encodes the CS/SS selectors loaded by the CPU:</span>
+<span class="c">//   [47:32] kernel CS (0x08) → SS = 0x10 automatically</span>
+<span class="c">//   [63:48] user   CS base (0x10) → CS = +16 = 0x20, SS = +8 = 0x18</span>
+let star: u64 = (0x0010 &lt;&lt; 48) | (0x0008 &lt;&lt; 32);
+wrmsr(MSR_STAR, star);
+wrmsr(MSR_LSTAR, syscall_entry as u64);
+wrmsr(MSR_SFMASK, 0x200);                             <span class="c">// clear IF on entry</span></code></pre>
+  <div class="callout">
+    <span class="label">The GDT-order gotcha</span>
+    STAR doesn't name all four selectors — it names two, and the CPU derives the others by arithmetic
+    (<code class="mono">+8</code>, <code class="mono">+16</code>). That's why the GDT puts user
+    <em>data</em> at <code class="mono">0x18</code> and user <code class="mono">code</code> at
+    <code class="mono">0x20</code>: the order is dictated by SYSRET's fixed offsets, not by taste. Get it
+    backwards and <code class="mono">sysretq</code> loads a data descriptor as CS and faults with #GP.
+  </div>
+
+  <h2>The register frame</h2>
+  <p>
+    SYSCALL does a lot for us (saves RIP in RCX, RFLAGS in R11, applies SFMASK) but leaves RSP pointing at the
+    <em>user</em> stack — so the stub's first job is to stash the user RSP and adopt the kernel stack. Then it
+    pushes a 15-qword frame in a fixed order, so Rust can read it as a <code class="mono">#[repr(C)]</code>
+    struct.
+  </p>
+<pre><code><span class="c">// syscall.rs — the entry stub (abridged)</span>
+"syscall_entry:",
+"mov qword ptr [rip + sigrun_syscall_user_rsp], rsp",   <span class="c">// stash user RSP</span>
+"mov rsp, qword ptr [rip + sigrun_syscall_kernel_rsp]", <span class="c">// adopt kernel stack</span>
+"push r11",   <span class="c">// user RFLAGS (field 14)</span>
+"push rcx",   <span class="c">// user RIP    (field 13)</span>
+"push r15", "push r14", "push r13", "push r12", "push rbp", "push rbx",
+"push r10",   <span class="c">// arg3 — Linux ABI uses r10 because SYSCALL clobbers rcx</span>
+"push r9", "push r8", "push rdx", "push rsi", "push rdi",
+"push rax",   <span class="c">// syscall number (lands at [rsp+0])</span>
+"mov rdi, rsp",
+"call rust_syscall_handler",
+"add rsp, 8",                        <span class="c">// discard the old rax slot</span>
+<span class="c">/* pop everything back, restore user RSP, sysretq */</span>
+"sysretq",</code></pre>
+
+  <h2>Dispatch: five calls that actually work</h2>
+  <table>
+    <tr><th>rax</th><th>Name</th><th>What it does today</th></tr>
+    <tr><td class="mono">1</td><td class="mono">SYS_WRITE</td><td>fd 1 or 2 → <code class="mono">serial::write</code> on the byte slice; returns length or −1 (EBADF)</td></tr>
+    <tr><td class="mono">39</td><td class="mono">SYS_GETPID</td><td>Returns the current <code class="mono">TaskId</code> from the scheduler</td></tr>
+    <tr><td class="mono">24</td><td class="mono">SYS_SCHED_YIELD</td><td>Calls <code class="mono">scheduler::tick()</code> to give up the CPU</td></tr>
+    <tr><td class="mono">35</td><td class="mono">SYS_NANOSLEEP</td><td>Busy-wait using <code class="mono">timer::sleep_ns</code> (not a blocking sleep yet)</td></tr>
+    <tr><td class="mono">60</td><td class="mono">SYS_EXIT</td><td>Logs, then <code class="mono">switch_to_idle()</code> — the frame is leaked, no task teardown yet</td></tr>
+    <tr><td class="mono">—</td><td>anything else</td><td>Logs <code class="mono">unknown nr=…</code> and returns <code class="mono">u64::MAX</code> (ENOSYS)</td></tr>
+  </table>
+  <div class="callout warn">
+    <span class="label">Two ABI worlds — know this</span>
+    <code class="mono">libs/syscall-api/src/number.rs</code> defines 31 <em>different</em> syscall numbers
+    (<code class="mono">EXIT=0, WRITE=23, IPC_SEND=30, CAP_GRANT=40, …</code>) for a future userspace ABI, while
+    the kernel's dispatch table uses the Linux x86-64 numbers above. They are not reconciled yet. If an
+    interviewer notices, the right answer is: "the kernel implements a Linux-compatible subset so real
+    userspace tooling could work, and the richer SIGRUN-specific ABI is designed but not yet wired — unifying
+    them is a known task."
+  </div>
+
+  <h2>The ring-3 demo</h2>
+  <p>
+    After the kernel tasks are spawned, <code class="mono">launch_user_demo()</code> allocates a 4&nbsp;KiB user
+    stack and executes <code class="mono">iretq</code> with an SS:RSP:RFLAGS:CS:RIP frame — CS =
+    <code class="mono">0x23</code> (user code, DPL 3), SS = <code class="mono">0x1b</code> (user data) — which
+    drops the CPU to ring 3 at <code class="mono">user_init_process</code>. That function then does real
+    syscalls with inline asm: <code class="mono">sys_write</code> of a message, <code class="mono">sys_getpid</code>,
+    another write, and finally <code class="mono">sys_exit</code>. It works because the U/S hack in
+    <a href="/memory">memory</a> made the kernel's pages user-accessible — the demo is linked into the kernel
+    binary but executes at CPL 3.
+  </p>
+<pre><code><span class="c">// main.rs — the ring-3 jump (IRETQ frame is pushed high-to-low)</span>
+core::arch::asm!(
+    "push &#123;ss&#125;",  "push &#123;user_rsp&#125;",  "pushfq",
+    "or qword ptr [rsp], 0x200",     <span class="c">// ensure IF=1 in the user's RFLAGS</span>
+    "push &#123;cs&#125;",  "push &#123;user_rip&#125;", "iretq",
+    ss = in(reg) 0x1bu64, cs = in(reg) 0x23u64, ...
+    options(noreturn),
+);</code></pre>
+
+  <div class="qa">
+    <h2>Interview Q&amp;A: syscalls</h2>
+
+    <div class="qa-item">
+      <p class="qa-q"><span class="tag">CORE</span>Why SYSCALL/SYSRET instead of <code class="mono">int 0x80</code>?</p>
+      <div class="qa-a">
+        <p>
+          Speed and control. An <code class="mono">int</code> goes through the IDT (memory lookup), pushes a full
+          interrupt frame, and requires an <code class="mono">iret</code> that revalidates a lot of state.
+          SYSCALL jumps straight to the address in LSTAR with the CPU's own register saves, and SYSRETQ returns
+          without a stack switch or descriptor reload. The trade is that the kernel must do that bookkeeping
+          itself — hence the stub's explicit RSP handoff. Linux uses exactly this pair on x86-64.
+        </p>
+      </div>
+      <div class="qa-followup"><b>FOLLOW-UP</b> "What does SYSCALL not do that you must?" — It doesn't switch stacks, doesn't validate the user's RIP/RSP are canonical, and doesn't mask all state; RSP still points into user memory, so until the stub swaps it, the kernel is running on a stack the user controls — a classic privilege-escalation surface (privilege-separation "SYSRET bug" territory) that a production kernel handles with a switch stack and strict validation.</div>
+    </div>
+
+    <div class="qa-item">
+      <p class="qa-q"><span class="tag">GOTCHA</span>Why is argument 3 in <code class="mono">r10</code> and not <code class="mono">rcx</code>?</p>
+      <div class="qa-a">
+        <p>
+          Because SYSCALL overwrites RCX with the user's return RIP (and R11 with RFLAGS). The hardware steals
+          RCX, so the syscall ABI uses R10 as the fourth argument register instead — Linux made the same choice,
+          and SIGRUN copies it rather than inventing a convention. This is the kind of detail that separates
+          "I read the Intel manual" from "I copied a blog".
+        </p>
+      </div>
+    </div>
+
+    <div class="qa-item">
+      <p class="qa-q"><span class="tag">DESIGN</span>What's the security hole in <code class="mono">sys_write</code>, and how would you fix it?</p>
+      <div class="qa-a">
+        <p>
+          It builds a slice straight from the user's pointer with
+          <code class="mono">core::slice::from_raw_parts(buf_ptr, len)</code> and no validation at all — the
+          comment in the source admits it. A malicious or buggy user program could pass a kernel address, an
+          unmapped address, or a huge length. The fix is a <code class="mono">copy_from_user</code> helper
+          that range-checks the pointer against the current address space's user regions, faults cleanly
+          instead of panicking, and copies into a kernel buffer before trusting the bytes. Enabling
+          SMAP/SMEP in CR4 would also stop the kernel from touching user memory without an explicit window.
+        </p>
+      </div>
+    </div>
+
+    <div class="qa-item">
+      <p class="qa-q"><span class="tag">CORE</span>What actually happens when the demo calls <code class="mono">sys_exit</code>?</p>
+      <div class="qa-a">
+        <p>
+          The handler logs the code and calls <code class="mono">scheduler::switch_to_idle()</code>, which
+          context-switches to the idle task using <code class="mono">BOOT_SAVED_RSP</code> as a throwaway slot —
+          it never returns to the syscall frame. So the user stack, the task, and its frame are simply
+          abandoned; the timer-driven scheduler then resumes the kernel tasks. There's no
+          <code class="mono">exit</code> that frees resources, notifies a parent, or reaps the task — because
+          there are no parents or process lifecycle yet. That's the honest gap; saying so demonstrates you know
+          what a real <code class="mono">exit</code> entails (zombie state, reaping, fd/cap cleanup).
+        </p>
+      </div>
+      <div class="qa-followup"><b>FOLLOW-UP</b> "Why does it use <code class="mono">switch_to_idle</code> and not a normal return?" — A normal <code class="mono">sysretq</code> would return to user code that is supposed to be gone; the process has no valid continuation, so the kernel switches away entirely and lets the scheduler pick the next runnable task.</div>
+    </div>
+  </div>
+
+  <div class="backtop"><a href="#">↑ back to top</a></div>
+
+  <div class="pagenav">
+    <a href="/interrupts"><span>Prev</span><b>← Interrupts</b></a>
+    <a class="next" href="/ipc"><span>Next</span><b>IPC — channels, notifications, shared memory →</b></a>
+  </div>
+</BaseLayout>

@@ -10,6 +10,6 @@
     "serve": "python3 -m http.server 8787 -d dist"
   },
   "dependencies": {
-    "astro": "^5.0.0"
+    "astro": "^7.4.7"
   }
 }
